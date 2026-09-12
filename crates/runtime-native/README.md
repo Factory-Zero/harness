@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Cratefield/harness">
-    <img src="https://raw.githubusercontent.com/Cratefield/harness/main/assets/readme-banner.png" alt="Cratefield Harness. The open-source core. Modules are crates, compiled into one stateless Worker with its own database." width="100%">
+    <img src="https://raw.githubusercontent.com/Cratefield/harness/main/assets/banners/cratefield-runtime-native.png" alt="cratefield-runtime-native — The same harness, as a binary." width="100%">
   </a>
 </p>
 

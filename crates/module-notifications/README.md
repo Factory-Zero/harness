@@ -1,3 +1,15 @@
+<p align="center">
+  <a href="https://github.com/Cratefield/harness">
+    <img src="https://raw.githubusercontent.com/Cratefield/harness/main/assets/banners/cratefield-module-notifications.png" alt="cratefield-module-notifications — One call, wherever they are." width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://crates.io/crates/cratefield-module-notifications"><img src="https://img.shields.io/crates/v/cratefield-module-notifications.svg?style=flat-square&labelColor=0A0A0B&color=4C6FFF" alt="cratefield-module-notifications on crates.io"></a>
+  <a href="https://docs.rs/cratefield-module-notifications"><img src="https://img.shields.io/docsrs/cratefield-module-notifications?style=flat-square&labelColor=0A0A0B&color=EDEBE6" alt="cratefield-module-notifications documentation"></a>
+  <a href="https://github.com/Cratefield/harness/blob/main/LICENSE"><img src="https://img.shields.io/badge/LICENSE-MIT-4C6FFF?style=flat-square&labelColor=0A0A0B" alt="MIT"></a>
+</p>
+
 # cratefield-module-notifications
 
 Push notifications for a Cratefield venture: device and browser
