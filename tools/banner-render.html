@@ -2,6 +2,7 @@
 <!-- Source for assets/readme-banner.png and assets/social-preview.png.
      Regenerate with tools/render-banner.sh.
      Query params: k=kicker t=title s=subtitle m=meta h=height (400 | 640)
+     o=output-box label l=lit grid cells, comma-separated 0-15
 
      Deliberately the same visual system as cratefield.com: the 56px mesh, the
      field of modules and ports resolving into one binary, and the one accent. -->
@@ -46,7 +47,7 @@
   <div class="mesh"></div>
   <div class="field" id="field"></div>
   <div class="arrow" id="arrow">&darr;</div>
-  <div class="out" id="out">acme_backend.wasm</div>
+  <div class="out" id="out"></div>
   <div class="c">
     <div class="top">
       <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="6" height="6" fill="#EDEBE6"/><rect x="9" y="1" width="6" height="6" fill="#EDEBE6"/><rect x="17" y="1" width="6" height="6" fill="#3A3A3F"/><rect x="1" y="9" width="6" height="6" fill="#EDEBE6"/><rect x="9" y="9" width="6" height="6" fill="#4C6FFF"/><rect x="17" y="9" width="6" height="6" fill="#EDEBE6"/><rect x="1" y="17" width="6" height="6" fill="#3A3A3F"/><rect x="9" y="17" width="6" height="6" fill="#EDEBE6"/><rect x="17" y="17" width="6" height="6" fill="#EDEBE6"/></svg>
@@ -58,7 +59,6 @@
     </div>
     <div class="bottom">
       <div id="m"></div>
-      <div>MIT</div>
     </div>
   </div>
   <div class="rule"></div>
@@ -77,7 +77,10 @@
   if (q.get('k')) document.getElementById('k').textContent = q.get('k');
   if (q.get('t')) document.getElementById('t').textContent = q.get('t');
   document.getElementById('s').textContent = q.get('s') || '';
-  document.getElementById('m').textContent = q.get('m') || '';
+  // MIT rides at the end of the meta line. It used to be its own element at
+  // the bottom-right, where the output box covered it.
+  var meta = q.get('m') || '';
+  document.getElementById('m').textContent = meta ? meta + '  ·  MIT' : 'MIT';
 
   // Type and furniture scale with the canvas so both sizes stay balanced.
   var tall = H >= 560;
@@ -85,8 +88,13 @@
   document.getElementById('s').style.fontSize = (tall ? 24 : 21) + 'px';
   document.querySelector('.c').style.padding = (tall ? 64 : 48) + 'px 60px';
 
+  document.getElementById('out').textContent = q.get('o') || 'acme_backend.wasm';
+
   var field = document.getElementById('field');
-  var lit = { 1: 1, 4: 1, 6: 1, 11: 1, 13: 1 };
+  // Which cells are lit. A crate passes its own so that every banner is the
+  // same motif with its own constellation, rather than 27 identical images.
+  var lit = {};
+  (q.get('l') || '1,4,6,11,13').split(',').forEach(function (n) { lit[parseInt(n, 10)] = 1; });
   for (var i = 0; i < 16; i++) {
     var cell = document.createElement('i');
     if (lit[i]) cell.className = 'on';

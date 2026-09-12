@@ -1,0 +1,27 @@
+cratefield	CRATEFIELD · THE FACADE	One dependency.	The core, a runtime, adapters and modules — pulled in by feature, versions known to work together.	ONE CRATE · FEATURES · NO LAYER	cratefield
+cratefield-core	CRATEFIELD · CORE	The kernel.	The Module trait, the Harness builder, the port traits, and the errors every module answers with.	MODULE · HARNESS · PORTS · PROBLEM+JSON	acme_backend.wasm
+cratefield-cli	CRATEFIELD · CLI · FZ	The fz binary.	Collect and apply migrations, check an environment, list modules, mint push keys.	MIGRATIONS · DOCTOR · MODULES · PUSH	fz doctor
+cratefield-testing	CRATEFIELD · CONFORMANCE KIT	Every module passes it.	Fake ports, an in-memory database and request helpers over the real router. No network.	FAKE PORTS · IN-MEMORY DB · NO NETWORK	module_suite.rs
+cratefield-ui	CRATEFIELD · UI RENDERER	Pages from the surface.	Renders what a module declares: pages, fragments, in-process form dispatch, the cf-* markup contract.	SURFACE · FRAGMENTS · CF-* CONTRACT	GET /ui
+cratefield-runtime-cloudflare	CRATEFIELD · RUNTIME · CLOUDFLARE	One stateless Worker.	workers-rs entry points, with D1, KV, Rate Limiting and wait_until mapped onto the ports.	WASM32 · D1 · KV · WAIT_UNTIL	acme_backend.wasm
+cratefield-runtime-native	CRATEFIELD · RUNTIME · NATIVE	The same harness, as a binary.	axum on a TCP listener, reqwest over rustls, Redis ports and in-process cron.	TOKIO · AXUM · REDIS · CRON	./acme-backend
+cratefield-adapter-sqlite	CRATEFIELD · ADAPTER · SQLITE	Every test runs on it.	The Database port over rusqlite: the whole suite, and single-node self-hosting.	RUSQLITE · TESTS · SELF-HOSTING	acme.db
+cratefield-adapter-postgres	CRATEFIELD · ADAPTER · POSTGRES	Database, at size.	The Database port over sqlx Postgres 16. Native only, and it says so at compile time.	SQLX · POSTGRES 16 · NATIVE ONLY	postgres://
+cratefield-adapter-resend	CRATEFIELD · ADAPTER · RESEND	Mail that goes out.	The Mailer port over the Resend API, through the runtime's HttpClient — no reqwest, no OpenSSL.	MAILER · REST · NOTCONFIGURED MODE	mail.send()
+cratefield-adapter-turnstile	CRATEFIELD · ADAPTER · TURNSTILE	Fail closed.	The Captcha port over Cloudflare Turnstile siteverify, on the runtime's own HttpClient.	CAPTCHA · SITEVERIFY · FAIL-CLOSED	verify()
+cratefield-adapter-stripe	CRATEFIELD · ADAPTER · STRIPE	Payments port.	The Payments port over the Stripe REST API, same shape on Workers and native.	PAYMENTS · REST · IDEMPOTENT	charge()
+cratefield-adapter-apns	CRATEFIELD · ADAPTER · APNS	Push, to phones.	The Push port over Apple Push Notification service, HTTP/2 through the HttpClient port.	HTTP/2 · ES256 · NO VENDOR SDK	apns.push()
+cratefield-adapter-fcm	CRATEFIELD · ADAPTER · FCM	Push, to Android.	The Push port over Firebase Cloud Messaging HTTP v1, the same shape as APNs.	FCM HTTP V1 · RS256 · ONE SHAPE	fcm.push()
+cratefield-adapter-webpush	CRATEFIELD · ADAPTER · WEB PUSH	Push, to browsers.	The Push port over Web Push: RFC 8030 delivery, RFC 8188 encryption, VAPID. Browsers and UnifiedPush.	RFC 8030 · 8188 · 8291 · VAPID	webpush.push()
+cratefield-push-auth	CRATEFIELD · PUSH · TOKENS	The tokens push presents.	ES256 for APNs and VAPID, RS256 for Google service accounts. One signer, cached.	ES256 · RS256 · CACHED	bearer
+cratefield-push-wiring	CRATEFIELD · PUSH · WIRING	One env table.	Assembles the Push port from the environment — the same table serve(), fz push and fz doctor read.	ENV · THREE TRANSPORTS · ONE READER	push_from_env()
+cratefield-module-email-signup	CRATEFIELD · MODULE · EMAIL SIGNUP	Confirmed, or not on the list.	Double opt-in, unsubscribe in every message, and one answer for every address state.	DOUBLE OPT-IN · NO ENUMERATION	POST /v1/email-signup
+cratefield-module-waitlist	CRATEFIELD · MODULE · WAITLIST	A place in the queue.	Confirm by email, take a dense position in one atomic batch, credit a referrer.	POSITIONS · REFERRALS · ATOMIC	POST /v1/waitlist
+cratefield-module-cms	CRATEFIELD · MODULE · CONTENT	Drafts are not published.	Typed collections, a revision on every save, publishing as its own act — in your database.	TYPED · VERSIONED · YOUR DATABASE	GET /v1/cms
+cratefield-module-notifications	CRATEFIELD · MODULE · NOTIFICATIONS	One call, wherever they are.	Push, an in-app inbox and email from one notify(), per person, per category, in their language.	PUSH · INBOX · EMAIL · PER-PERSON	notify()
+cratefield-module-privacy	CRATEFIELD · MODULE · PRIVACY	Answer the request.	Subject access and erasure, assembled from what every other module declares it holds.	EXPORT · ERASURE · DECLARED	GET /v1/privacy/export
+cratefield-auth-client	CRATEFIELD · AUTH · CLIENT	Who the caller is.	Verifies auth-service tokens in your app: JWKS fetch and cache, ES256, an axum extractor.	JWKS · ES256 · EXTRACTOR	Authenticated
+cratefield-secrets	CRATEFIELD · SECRETS	Never read back.	Envelope encryption over the Database port, two tiers, ciphertexts bound to their own row.	ENVELOPE · AAD-BOUND · AUDITED	wrap()
+cratefield-kms	CRATEFIELD · KMS PORT	Wrap and unwrap.	The KMS port for data keys, with a local-file provider that refuses to run in production.	WRAP · UNWRAP · LOCAL DEV	kms.wrap()
+cratefield-i18n	CRATEFIELD · I18N	In their own language.	Fluent catalogs, BCP 47 negotiation and text direction. No I/O, nothing notification-specific.	FLUENT · BCP 47 · DIRECTION	t("booked")
+cratefield-manifest	CRATEFIELD · MANIFEST	What a backend is.	The venture manifest and the deterministic composition generator it produces.	DECLARATIVE · DETERMINISTIC	venture.toml

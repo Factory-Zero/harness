@@ -1,3 +1,15 @@
+<p align="center">
+  <a href="https://github.com/Cratefield/harness">
+    <img src="https://raw.githubusercontent.com/Cratefield/harness/main/assets/banners/cratefield-i18n.png" alt="cratefield-i18n — In their own language." width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://crates.io/crates/cratefield-i18n"><img src="https://img.shields.io/crates/v/cratefield-i18n.svg?style=flat-square&labelColor=0A0A0B&color=4C6FFF" alt="cratefield-i18n on crates.io"></a>
+  <a href="https://docs.rs/cratefield-i18n"><img src="https://img.shields.io/docsrs/cratefield-i18n?style=flat-square&labelColor=0A0A0B&color=EDEBE6" alt="cratefield-i18n documentation"></a>
+  <a href="https://github.com/Cratefield/harness/blob/main/LICENSE"><img src="https://img.shields.io/badge/LICENSE-MIT-4C6FFF?style=flat-square&labelColor=0A0A0B" alt="MIT"></a>
+</p>
+
 # cratefield-i18n
 
 Server-side localisation for a Cratefield venture: [Project
