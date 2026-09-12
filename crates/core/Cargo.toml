@@ -1,13 +1,13 @@
 [package]
 name = "cratefield-core"
 description = "Cratefield harness kernel: Module trait, Harness builder, ports, errors"
-readme = "../../README.md"
+readme = "README.md"
 keywords = ["cratefield", "harness", "backend", "axum", "modules"]
 categories = ["web-programming", "asynchronous"]
 include = ["src/**/*", "examples/**/*"]
 # 0.3.0 (not workspace): the UI surface (`Module::surface`, `GET /__surface`,
 # ADR 0010) adds a defaulted trait method and a root route.
-version = "0.4.2"
+version = "0.4.3"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
