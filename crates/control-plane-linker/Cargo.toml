@@ -1,0 +1,20 @@
+[package]
+name = "cratefield-linker"
+description = "The artifact linker: compose a venture from precompiled per-module segments, keyed on the #59 build key, without invoking cargo"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cratefield-manifest = { workspace = true }
+sha2 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
