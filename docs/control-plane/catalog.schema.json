@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cratefield.com/schemas/catalog.schema.json",
+  "title": "Cratefield module catalog",
+  "description": "The curated module catalog the control plane ships (harness issue #139), generated from `cratefield-catalog`'s `curated()` by `cargo run -p cratefield-catalog --example catalog-doc` and checked in CI for drift. Do not edit by hand. `schema` is the envelope's own version: it bumps when this shape changes, so a consumer can branch without parsing module entries. Modules appear in the order the wizard shows them.",
+  "type": "object",
+  "required": [
+    "schema",
+    "modules"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    }
+  },
+  "$defs": {
+    "module": {
+      "type": "object",
+      "required": [
+        "depends_on",
+        "detail",
+        "name",
+        "releases",
+        "slug",
+        "summary",
+        "tier"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Shown in the wizard.",
+          "type": "string"
+        },
+        "summary": {
+          "description": "One line, written for a customer rather than a compiler.",
+          "type": "string"
+        },
+        "tier": {
+          "description": "`core` is always in every venture; `optional` is the customer's pick.",
+          "enum": [
+            "core",
+            "optional"
+          ]
+        },
+        "depends_on": {
+          "description": "Slugs pulled in when this module is selected, ordered before it in a resolved set.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "releases": {
+          "description": "Pinned releases, newest first. Only a pinned release under an `approved` review is selectable.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/release"
+          }
+        },
+        "detail": {
+          "$ref": "#/$defs/detail"
+        },
+        "slug": {
+          "description": "Stable kebab-case; the harness module name, mounted at /v1/<slug>.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "required": [
+        "digest",
+        "review",
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "description": "An exact `N.N.N` pin — never a range, never a pre-release tag.",
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "description": "Content address of the release artifact. The all-zero value is a visible placeholder stamped when CI cuts a release from the built artifact.",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "review": {
+          "description": "The review state. Only `approved` is selectable; `revoked` is refused even for manifests that referenced the release before revocation.",
+          "oneOf": [
+            {
+              "const": "pending"
+            },
+            {
+              "type": "object",
+              "required": [
+                "approved"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "approved": {
+                  "type": "object",
+                  "required": [
+                    "reviewer",
+                    "reviewed_at"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "reviewer": {
+                      "type": "string"
+                    },
+                    "reviewed_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "revoked"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "revoked": {
+                  "type": "object",
+                  "required": [
+                    "by",
+                    "revoked_at",
+                    "reason"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "by": {
+                      "type": "string"
+                    },
+                    "revoked_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "detail": {
+      "description": "What the wizard shows when somebody opens a module rather than just ticking it.",
+      "type": "object",
+      "required": [
+        "crate_name",
+        "needs",
+        "optional",
+        "routes",
+        "surface",
+        "tables",
+        "what_it_is"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "what_it_is": {
+          "description": "What the module is, in the customer's terms.",
+          "type": "string"
+        },
+        "crate_name": {
+          "description": "The crate on crates.io where it is published.",
+          "type": "string"
+        },
+        "needs": {
+          "description": "Ports that must be configured or the venture refuses to build.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "optional": {
+          "description": "Ports used when present and done without when absent.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tables": {
+          "description": "The tables it creates in the venture's own database.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "routes": {
+          "description": "Its HTTP surface, mount prefix already applied.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/route"
+          }
+        },
+        "surface": {
+          "description": "What it renders at /ui, or null when it renders nothing.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "route": {
+      "type": "object",
+      "required": [
+        "method",
+        "note",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "description": "Upper-case, space-separated when a path answers more than one.",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "note": {
+          "description": "What calling it does, for a customer rather than a compiler.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,354 @@
+{
+  "schema": 1,
+  "modules": [
+    {
+      "slug": "email-signup",
+      "name": "Email signup",
+      "summary": "Collect email addresses with double opt-in, confirmation and unsubscribe.",
+      "tier": "optional",
+      "depends_on": [],
+      "releases": [
+        {
+          "version": "0.1.1",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "review": {
+            "approved": {
+              "reviewer": "release-review",
+              "reviewed_at": "2026-09-01T00:00:00Z"
+            }
+          }
+        }
+      ],
+      "detail": {
+        "what_it_is": "A visitor gives you an address and confirms it by email before it counts. Nothing is ever added to the list without that second step, and unsubscribing is one link away in every message. The join endpoint answers identically whatever the address's state, so nobody can use it to find out who already signed up.",
+        "crate_name": "cratefield-module-email-signup",
+        "needs": [
+          "Database",
+          "Mailer",
+          "Signer"
+        ],
+        "optional": [
+          "Captcha",
+          "RateLimiter"
+        ],
+        "tables": [
+          "subscribers"
+        ],
+        "routes": [
+          {
+            "method": "POST",
+            "path": "/v1/email-signup",
+            "note": "Join. The same answer for every address state."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/email-signup/confirm",
+            "note": "Confirm the address from the emailed link."
+          },
+          {
+            "method": "GET POST",
+            "path": "/v1/email-signup/unsubscribe",
+            "note": "Leave the list, from a link or a form."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/email-signup/admin/export.csv",
+            "note": "Admin token: the full list as CSV."
+          },
+          {
+            "method": "DELETE",
+            "path": "/v1/email-signup/admin/subscribers/{id}",
+            "note": "Admin token: remove one subscriber."
+          }
+        ],
+        "surface": "A join form and an admin table, rendered at /ui from the handler's own types."
+      }
+    },
+    {
+      "slug": "waitlist",
+      "name": "Waitlist",
+      "summary": "A per-product waitlist with confirmation, positions and referral codes.",
+      "tier": "optional",
+      "depends_on": [],
+      "releases": [
+        {
+          "version": "0.1.1",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "review": {
+            "approved": {
+              "reviewer": "release-review",
+              "reviewed_at": "2026-09-01T00:00:00Z"
+            }
+          }
+        }
+      ],
+      "detail": {
+        "what_it_is": "Somebody joins a named waitlist and confirms by email; on confirmation they are given a dense queue position inside a single atomic batch, so two people confirming at the same moment never share a place. Referral codes credit a confirmed referrer on the same product. Like the signup module it answers identically for every row state, so the endpoint reveals nothing about who is on the list.",
+        "crate_name": "cratefield-module-waitlist",
+        "needs": [
+          "Database",
+          "Mailer",
+          "Signer"
+        ],
+        "optional": [
+          "Captcha",
+          "RateLimiter"
+        ],
+        "tables": [
+          "waitlist_entries",
+          "waitlist_send_cooldown",
+          "waitlist_position_lock"
+        ],
+        "routes": [
+          {
+            "method": "POST",
+            "path": "/v1/waitlist",
+            "note": "Join. Answers 202 whatever the state."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/waitlist/confirm",
+            "note": "Confirm and take a position."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/waitlist/status",
+            "note": "A signed status token: position, referrals, share link."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/waitlist/admin/export.csv",
+            "note": "Admin token: the full list as CSV."
+          }
+        ],
+        "surface": "A join form, a status page and an admin export table, rendered at /ui."
+      }
+    },
+    {
+      "slug": "cms",
+      "name": "Content",
+      "summary": "Typed, versioned content in your own database, edited through the admin.",
+      "tier": "optional",
+      "depends_on": [],
+      "releases": [
+        {
+          "version": "0.1.1",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "review": {
+            "approved": {
+              "reviewer": "release-review",
+              "reviewed_at": "2026-09-01T00:00:00Z"
+            }
+          }
+        }
+      ],
+      "detail": {
+        "what_it_is": "Content lives in collections you define, every save keeps a revision, and publishing is a separate act from saving — so a draft is never what the public reads. The public routes are reads of published content only; every write goes through the admin. It never leaves your database and never calls anybody else's service.",
+        "crate_name": "cratefield-module-cms",
+        "needs": [
+          "Database"
+        ],
+        "optional": [],
+        "tables": [
+          "cms_item",
+          "cms_revision"
+        ],
+        "routes": [
+          {
+            "method": "GET",
+            "path": "/v1/cms/{collection}",
+            "note": "Published items in a collection."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/cms/{collection}/{slug}",
+            "note": "One published item."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/cms/admin/list",
+            "note": "Admin: everything, drafts included."
+          },
+          {
+            "method": "POST",
+            "path": "/v1/cms/admin/save",
+            "note": "Admin: save a draft, keeping a revision."
+          },
+          {
+            "method": "POST",
+            "path": "/v1/cms/admin/publish",
+            "note": "Admin: make a revision the public one."
+          },
+          {
+            "method": "POST",
+            "path": "/v1/cms/admin/unpublish",
+            "note": "Admin: take an item off the public routes."
+          },
+          {
+            "method": "POST",
+            "path": "/v1/cms/admin/delete",
+            "note": "Admin: remove an item and its revisions."
+          }
+        ],
+        "surface": "An editing admin, rendered at /ui from the handler's own types."
+      }
+    },
+    {
+      "slug": "notifications",
+      "name": "Notifications",
+      "summary": "Push to phones and browsers, an in-app inbox, and email — one API, per-person categories, in the recipient's own language.",
+      "tier": "optional",
+      "depends_on": [],
+      "releases": [
+        {
+          "version": "0.1.1",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "review": {
+            "approved": {
+              "reviewer": "release-review",
+              "reviewed_at": "2026-09-01T00:00:00Z"
+            }
+          }
+        }
+      ],
+      "detail": {
+        "what_it_is": "One call reaches a person wherever they agreed to be reached: a push notification on a phone or a browser, a message in the in-app inbox, an email — chosen per person, per category, and written in the language they picked. Undeliverable work is kept and retried rather than dropped, and what cannot be delivered at all lands in dead letters instead of vanishing.",
+        "crate_name": "cratefield-module-notifications",
+        "needs": [
+          "Database",
+          "Push",
+          "Clock",
+          "IdGen"
+        ],
+        "optional": [
+          "Defer",
+          "HttpClient",
+          "Realtime",
+          "Mailer",
+          "Signer"
+        ],
+        "tables": [
+          "notifications_subscriptions",
+          "notifications_preferences",
+          "notifications_outbox",
+          "notifications_dead_letters",
+          "notifications_inbox",
+          "notifications_email_targets",
+          "notifications_email_sends",
+          "notifications_locales",
+          "notifications_email_suppressed"
+        ],
+        "routes": [
+          {
+            "method": "GET",
+            "path": "/v1/notifications",
+            "note": "The in-app inbox for the signed-in person."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/notifications/unread-count",
+            "note": "How many are unread."
+          },
+          {
+            "method": "POST",
+            "path": "/v1/notifications/{id}/read",
+            "note": "Mark one read."
+          },
+          {
+            "method": "POST",
+            "path": "/v1/notifications/read-all",
+            "note": "Mark everything read."
+          },
+          {
+            "method": "DELETE",
+            "path": "/v1/notifications/{id}",
+            "note": "Remove one from the inbox."
+          },
+          {
+            "method": "PUT GET",
+            "path": "/v1/notifications/subscriptions",
+            "note": "Register a device or browser; list the registered ones."
+          },
+          {
+            "method": "DELETE",
+            "path": "/v1/notifications/subscriptions/{id}",
+            "note": "Unregister one."
+          },
+          {
+            "method": "GET PUT",
+            "path": "/v1/notifications/preferences",
+            "note": "Which categories reach this person, and how."
+          },
+          {
+            "method": "PUT",
+            "path": "/v1/notifications/email",
+            "note": "The address this person is emailed at."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/notifications/vapid-public-key",
+            "note": "The Web Push key a browser subscribes with."
+          },
+          {
+            "method": "POST",
+            "path": "/v1/notifications/email/webhook",
+            "note": "The mail provider's delivery and bounce reports."
+          }
+        ],
+        "surface": null
+      }
+    },
+    {
+      "slug": "privacy",
+      "name": "Privacy requests",
+      "summary": "Answer a subject access or erasure request from what every other module declares it holds. Optional, and the only honest default for a deployment holding personal data.",
+      "tier": "optional",
+      "depends_on": [],
+      "releases": [
+        {
+          "version": "0.1.1",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "review": {
+            "approved": {
+              "reviewer": "release-review",
+              "reviewed_at": "2026-09-01T00:00:00Z"
+            }
+          }
+        }
+      ],
+      "detail": {
+        "what_it_is": "Every other module declares what it holds about a person, and this module turns those declarations into the two answers the law asks for: everything you hold about somebody, and its deletion. It owns no tables of its own — it reads the composition — so a module added later is covered the day it is mounted, and a table nobody declared is reported as exactly that rather than passed over in silence.",
+        "crate_name": "cratefield-module-privacy",
+        "needs": [
+          "Database",
+          "Signer"
+        ],
+        "optional": [],
+        "tables": [],
+        "routes": [
+          {
+            "method": "GET",
+            "path": "/v1/privacy/manifest",
+            "note": "What this deployment holds, table by table, for a privacy page."
+          },
+          {
+            "method": "GET",
+            "path": "/v1/privacy/export",
+            "note": "Every row every module holds for one subject."
+          },
+          {
+            "method": "POST",
+            "path": "/v1/privacy/erase",
+            "note": "Preview an erasure and get a confirmation token."
+          },
+          {
+            "method": "POST",
+            "path": "/v1/privacy/erase/confirm",
+            "note": "Carry it out, and report what was reached."
+          }
+        ],
+        "surface": null
+      }
+    }
+  ]
+}

@@ -145,6 +145,8 @@ jobs:
         run: cargo run -q -p cratefield-push-wiring --example push-env-doc -- --check
       - name: Pricing tables drift check (issue #12)
         run: cargo run -q -p cratefield-billing --example pricing-doc -- --check
+      - name: Module catalog drift check (issue #139)
+        run: cargo run -q -p cratefield-catalog --example catalog-doc -- --check
 
   doc-commands:
     # No `#` in the name: GitHub truncates a check-run name there (issue #34).
