@@ -1,12 +1,13 @@
 //! The artifact linker (issue #159): a venture composed from precompiled
 //! per-module segments, without invoking cargo.
 //!
-//! Provisioning's [`Step::Artifact`] implies a build today. This crate is the
+//! Provisioning's artifact step (`Step::Artifact` in
+//! `cratefield-provisioning`) implies a build today. This crate is the
 //! part that does not have to: given a resolved [`ModuleSet`] (the reviewed
 //! catalog's pinned releases, issue #139) and per-module **segments** —
 //! precompiled bytes already addressed by their release digests — it composes
 //! one venture artifact bundle and stores it under the content address the
-//! artifact cache already uses ([`build_key`], issue #59). No second cache is
+//! artifact cache already uses ([`build_key()`](cratefield_manifest::build_key::build_key), issue #59). No second cache is
 //! invented: the bundle's identity *is* the #59 build key, and a
 //! configuration-only change (name, host, config, seed data, sidecar mounts)
 //! does not move it, so it finds the cached bundle and composes nothing.
@@ -62,7 +63,8 @@ const SEPARATOR: &[u8] = b"\n--segments--\n";
 // Inputs
 // ---------------------------------------------------------------------------
 
-/// The non-module inputs to [`build_key`] and to the bundle header: what the
+/// The non-module inputs to [`build_key()`](cratefield_manifest::build_key::build_key)
+/// and to the bundle header: what the
 /// composed artifact is additionally a function of beyond the module set.
 /// Mirrors [`BuildKeyInputs`] minus the releases, which come from the set.
 #[derive(Debug, Clone, PartialEq, Eq)]
