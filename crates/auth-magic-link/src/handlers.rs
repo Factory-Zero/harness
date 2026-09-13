@@ -8,7 +8,8 @@ use cratefield_core::{Json, Message, Problem, Scope, SendOutcome};
 use factory0_auth_core::{
     Redacted, STATUS_ACTIVE, SingleUseTokenRow, TOKEN_MAGIC_LINK, UserRow,
     consume_single_use_token, cookie_value as session_cookie_value, insert_single_use_token,
-    insert_user, set_cookie, single_use_token_by_hash, user_by_id, user_by_primary_email,
+    insert_user, retire_unconsumed_tokens, set_cookie, single_use_token_by_hash, user_by_id,
+    user_by_primary_email,
 };
 use http::{HeaderMap, StatusCode, header};
 use serde::Deserialize;
@@ -34,6 +35,21 @@ const TOKEN_BYTES: usize = 32;
 /// A `return_to` longer than this is not a path anyone meant. Matches the
 /// providers' limit so the login chooser's `/authorize` fits.
 const MAX_RETURN_TO: usize = 4096;
+
+/// The durable one-send-per-window ledger (issue #133's shape, applied
+/// here). Name must match the migration in `lib.rs`.
+pub(crate) const SEND_COOLDOWN_TABLE: &str = "auth_magic_link_send_cooldown";
+
+/// One sign-in mail per address per minute.
+///
+/// A minute rather than the hour `module-waitlist` and
+/// `module-email-signup` use, because those mails are a confirmation the
+/// person can wait for and this one is the door: somebody who did not
+/// receive it is locked out for the whole window, and an hour of that is
+/// a support ticket. A minute still absorbs the two cases that matter —
+/// a double-submitted form, and a rate limiter that failed open — because
+/// both arrive within seconds.
+pub(crate) const RESEND_AFTER_SECS: i64 = 60;
 
 pub(crate) fn router() -> axum::Router<Arc<ModuleState>> {
     axum::Router::new()
@@ -211,6 +227,28 @@ async fn request(
         (None, false) => return Ok(accepted()),
     };
 
+    // The durable backstop (issue #133). The rate limiter above is a
+    // distributed counter whose transport can fail open, and this one is
+    // a row: at most one mail per address per window, decided by the
+    // database, race-free without a transaction. A refusal answers
+    // exactly like a send, because a caller who can tell "you already
+    // asked" from "no such account" can enumerate addresses.
+    let now = iso(clock.now());
+    let cutoff = iso(clock
+        .now()
+        .saturating_sub(time::Duration::seconds(RESEND_AFTER_SECS)));
+    match cratefield_core::SendCooldown::new(SEND_COOLDOWN_TABLE)
+        .try_acquire(db, &email, &now, &cutoff)
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => return Ok(accepted()),
+        Err(err) => {
+            tracing::error!(error = %err, "could not claim a send window");
+            return Err(Problem::internal().instance(&scope.request_id));
+        }
+    }
+
     if let Err(err) = issue_link(
         db,
         clock,
@@ -255,11 +293,10 @@ async fn issue_link(
             "the entropy source failed".to_owned(),
         ));
     };
-    let expires_at = crate::handlers::iso(
-        clock
-            .now()
-            .saturating_add(time::Duration::seconds(settings.ttl_secs)),
-    );
+    let issued_at = clock.now();
+    let now = crate::handlers::iso(issued_at);
+    let expires_at =
+        crate::handlers::iso(issued_at.saturating_add(time::Duration::seconds(settings.ttl_secs)));
     let row = SingleUseTokenRow {
         id: id_gen.ulid(),
         kind: TOKEN_MAGIC_LINK.to_owned(),
@@ -272,6 +309,14 @@ async fn issue_link(
         expires_at,
         consumed_at: None,
     };
+    // A replacement retires its predecessor, so at most one sign-in link
+    // for this account is live at a time. Two live links is two windows
+    // in which a forwarded mail or a link scanner signs somebody in, and
+    // the person who asked for a second one has already said the first is
+    // not the one they are using. Only this kind: retiring a user's
+    // outstanding authorization codes because a link was requested would
+    // break a parallel `/authorize`.
+    retire_unconsumed_tokens(db, TOKEN_MAGIC_LINK, user_id, &now).await?;
     insert_single_use_token(db, &row).await?;
 
     let link = format!(
