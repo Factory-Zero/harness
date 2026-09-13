@@ -1131,6 +1131,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratefield-linker"
+version = "0.1.1"
+dependencies = [
+ "cratefield-manifest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "cratefield-manifest"
 version = "0.1.3"
 dependencies = [
