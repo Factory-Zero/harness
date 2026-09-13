@@ -275,3 +275,108 @@ async fn a_degraded_tenant_is_marked_and_skipped_by_the_fleet() {
     control_db.finish().await;
     tenant_db.finish().await;
 }
+
+#[tokio::test]
+async fn an_archived_tenant_cannot_be_resurrected_or_re_flown() {
+    // #336 gave the lifecycle an end (`offboarding`, `archived`). This is
+    // the registry half of that: once a tenant is archived its database is
+    // dropped and its data keys are destroyed, so a row that comes back to
+    // life would name a tenant nothing can reconstitute.
+    let Some(base) = base_url() else {
+        eprintln!("SKIPPED: {}", skip_reason());
+        return;
+    };
+    let Some(control_db) = TempDb::create(&base, "reconctl3").await else {
+        panic!("throwaway database creation failed");
+    };
+    let control = Postgres::connect(&control_db.url).await.expect("connect");
+    control
+        .bootstrap_registry()
+        .await
+        .expect("registry bootstraps");
+
+    let Some(tenant_db) = TempDb::create(&base, "reconretire").await else {
+        panic!("throwaway database creation failed");
+    };
+    control
+        .register_tenant("retiree", &tenant_db.url)
+        .await
+        .expect("registers");
+
+    // Offboarding: stopped serving, not yet shredded. The fleet must not
+    // fly it — reconnecting mid-shred and flipping it back to `active` is
+    // the failure this guards.
+    let harness = std::sync::Arc::new(harness());
+    control
+        .set_tenant_status("retiree", TenantStatus::Offboarding)
+        .await;
+    let reports = control
+        .reconcile_fleet(&harness, 8)
+        .await
+        .expect("fleet runs");
+    assert!(reports.is_empty(), "an offboarding tenant was flown");
+    assert_eq!(
+        control.tenants().await.expect("registry")[0].status,
+        TenantStatus::Offboarding,
+        "the fleet moved a tenant it should not have touched"
+    );
+
+    // The shred completes.
+    control
+        .set_tenant_status("retiree", TenantStatus::Archived)
+        .await;
+
+    // Terminal: no status write moves it back.
+    for attempt in [
+        TenantStatus::Active,
+        TenantStatus::Provisioning,
+        TenantStatus::Degraded,
+        TenantStatus::Offboarding,
+    ] {
+        control.set_tenant_status("retiree", attempt).await;
+        assert_eq!(
+            control.tenants().await.expect("registry")[0].status,
+            TenantStatus::Archived,
+            "a status write moved an archived tenant to {attempt}"
+        );
+    }
+
+    // Terminal: re-registering the id is refused, and says so. The
+    // database still exists here, so nothing but the guard stops it.
+    let refused = control
+        .register_tenant("retiree", &tenant_db.url)
+        .await
+        .expect_err("an archived tenant must not re-register");
+    assert!(
+        refused.to_string().contains("retiree"),
+        "the refusal names the tenant: {refused}"
+    );
+    assert_eq!(
+        control.tenants().await.expect("registry")[0].status,
+        TenantStatus::Archived,
+    );
+
+    // And it is still not flown.
+    let reports = control
+        .reconcile_fleet(&harness, 8)
+        .await
+        .expect("fleet runs");
+    assert!(reports.is_empty(), "an archived tenant was flown");
+
+    // A different id provisions normally: the guard is about this row,
+    // not about the registry having seen an archived tenant.
+    control
+        .register_tenant("successor", &tenant_db.url)
+        .await
+        .expect("a fresh id registers");
+    let reports = control
+        .reconcile_fleet(&harness, 8)
+        .await
+        .expect("fleet runs");
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].tenant, "successor");
+    assert_eq!(reports[0].status, TenantStatus::Active);
+
+    control_db.finish().await;
+    tenant_db.finish().await;
+}

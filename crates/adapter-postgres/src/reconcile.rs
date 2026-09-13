@@ -73,17 +73,36 @@ impl Postgres {
     /// status to `provisioning` — the next boot's reconciliation is what
     /// promotes it to `active`.
     ///
+    /// **An archived tenant is never re-registered.** Archiving means the
+    /// database was dropped and the data keys destroyed
+    /// (`docs/TENANT-ONBOARDING.md` §2); re-registering the same id would
+    /// mint a tenant that the registry says is the old one and that no
+    /// export can reconstitute. The guard is the `WHERE` on the conflict
+    /// branch, so it is decided by the database and not by a read the
+    /// caller might race.
+    ///
     /// # Errors
     ///
-    /// [`DbError`] when the write fails.
+    /// [`DbError`] when the write fails, and [`DbError::Execute`] naming
+    /// the tenant when the row is archived.
     pub async fn register_tenant(&self, tenant: &str, dsn: &str) -> Result<(), DbError> {
-        self.execute(&Statement::with_values(
-            "INSERT INTO harness_tenants (tenant, dsn, status) VALUES (?, ?, 'provisioning') \
-             ON CONFLICT (tenant) DO UPDATE SET dsn = excluded.dsn, status = 'provisioning'"
-                .to_owned(),
-            vec![tenant.to_owned().into(), dsn.to_owned().into()],
-        ))
-        .await?;
+        // 0 rows affected means the conflict branch was filtered out:
+        // the row exists and is archived. An insert or a permitted update
+        // both report 1.
+        let affected = self
+            .execute(&Statement::with_values(
+                "INSERT INTO harness_tenants (tenant, dsn, status) VALUES (?, ?, 'provisioning') \
+                 ON CONFLICT (tenant) DO UPDATE SET dsn = excluded.dsn, status = 'provisioning' \
+                 WHERE harness_tenants.status <> 'archived'"
+                    .to_owned(),
+                vec![tenant.to_owned().into(), dsn.to_owned().into()],
+            ))
+            .await?;
+        if affected == 0 {
+            return Err(DbError::Execute(format!(
+                "tenant {tenant} is archived and cannot be re-registered"
+            )));
+        }
         Ok(())
     }
 
@@ -117,10 +136,15 @@ impl Postgres {
     /// (RECONCILIATION.md §6): a write that fails mid-boot still leaves
     /// the tenant refused at request time, because its pool was never
     /// registered.
+    ///
+    /// Archived is terminal here too: the `WHERE` refuses to move a row
+    /// out of it. `offboarding` -> `archived` still passes, because the
+    /// guard reads the row's *current* status.
     pub async fn set_tenant_status(&self, tenant: &str, status: TenantStatus) {
         let _ = self
             .execute(&Statement::with_values(
-                "UPDATE harness_tenants SET status = ? WHERE tenant = ?".to_owned(),
+                "UPDATE harness_tenants SET status = ? WHERE tenant = ? AND status <> 'archived'"
+                    .to_owned(),
                 vec![status.as_str().to_owned().into(), tenant.to_owned().into()],
             ))
             .await;
@@ -227,7 +251,8 @@ impl Postgres {
     /// Reconciles every tenant in the registry whose status is `active`
     /// or `provisioning`, at most `parallelism` at a time (default 8;
     /// #30 §10 keeps the right number a measured question). A `degraded`
-    /// tenant is left for the retry timer, not re-flown this boot.
+    /// tenant is left for the retry timer, not re-flown this boot; an
+    /// `offboarding` or `archived` one is never flown again at all.
     ///
     /// This is what boot calls. The control database drives everything:
     /// if it cannot be bootstrapped or read, the error returns and the
@@ -246,11 +271,16 @@ impl Postgres {
         parallelism: usize,
     ) -> Result<Vec<TenantReport>, DbError> {
         self.bootstrap_registry().await?;
+        // Positive filter, not `!= Degraded`: see
+        // `TenantStatus::is_reconciled`. The negation was correct only
+        // while three statuses existed, and flying an offboarding or
+        // archived tenant would reconnect to a database that is being
+        // shredded and flip it back to `active`.
         let records: Vec<TenantRecord> = self
             .tenants()
             .await?
             .into_iter()
-            .filter(|record| record.status != TenantStatus::Degraded)
+            .filter(|record| record.status.is_reconciled())
             .collect();
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(parallelism.max(1)));
         // One task, many in-flight futures: the per-tenant work is
