@@ -1043,6 +1043,41 @@ pub async fn consume_single_use_token(
     single_use_token_by_id(db, id).await
 }
 
+/// Retires a user's unconsumed, unexpired tokens of one kind by stamping
+/// `consumed_at`; returns how many were retired.
+///
+/// Issuing a replacement should not leave the old one live. A sign-in
+/// link is a bearer credential, so two of them in two inboxes is twice
+/// the window in which a forwarded mail, a shared screen or a scanner
+/// signs somebody in — and the person who asked for a second link has
+/// already told you the first one is not the one they are using.
+///
+/// It is deliberately *not* folded into [`insert_single_use_token`]: an
+/// authorization code and a magic link are both rows here, and retiring
+/// a user's outstanding authorization codes because a second `/authorize`
+/// arrived would break a legitimate parallel flow. The caller names the
+/// kind it means.
+///
+/// # Errors
+///
+/// [`DbError::Execute`] when the statement fails.
+pub async fn retire_unconsumed_tokens(
+    db: &dyn Database,
+    kind: &str,
+    user_id: &str,
+    now: &str,
+) -> Result<u64, DbError> {
+    let mut update = Query::update();
+    update
+        .table(iden("single_use_tokens"))
+        .values([(iden("consumed_at"), now.into())])
+        .and_where(Expr::col(iden("kind")).eq(kind))
+        .and_where(Expr::col(iden("user_id")).eq(user_id))
+        .and_where(Expr::col(iden("consumed_at")).is_null())
+        .and_where(Expr::col(iden("expires_at")).gt(now));
+    db.execute(&Statement::render(&update)).await
+}
+
 /// Deletes single-use tokens whose `expires_at` has passed (consumed or
 /// not); returns the count.
 ///

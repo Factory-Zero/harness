@@ -36,8 +36,17 @@ mod handlers;
 mod mail;
 
 use cratefield_core::{
-    Config, ConfigError, Migrations, Module, ModuleConfig, ModuleContext, Port, ProblemDef,
+    Config, ConfigError, DataKind, Disposition, Migrations, Module, ModuleConfig, ModuleContext,
+    PersonalDataSet, Port, ProblemDef, SqlMigration, SubjectVia,
 };
+
+/// The durable send-cooldown table behind the one-mail-per-window claim
+/// (issue #133). Name must match `handlers::SEND_COOLDOWN_TABLE`.
+const MIGRATION_SEND_COOLDOWN: SqlMigration = SqlMigration::new(
+    "0001",
+    "send_cooldown",
+    include_str!("../migrations/sqlite/0001_send_cooldown.sql"),
+);
 use http::StatusCode;
 use std::sync::Arc;
 
@@ -204,10 +213,47 @@ impl Module for MagicLink {
         &[Port::RateLimiter, Port::Captcha]
     }
 
-    /// None. `auth-core` owns `single_use_tokens` and everything else this
-    /// module touches.
+    /// One. `auth-core` owns `single_use_tokens` and everything else this
+    /// module touches; the send-cooldown ledger is this module's, because
+    /// the window it enforces is this module's policy.
     fn tables(&self) -> &'static [&'static str] {
-        &[]
+        &["auth_magic_link_send_cooldown"]
+    }
+
+    /// The cooldown row is an address and a timestamp, and both are the
+    /// subject's.
+    ///
+    /// Unlike `module-waitlist`'s cooldown — which this one copies the
+    /// shape of, and which had to be declared
+    /// [`unreachable`](PersonalDataSet::unreachable) — the subject here is
+    /// the bare normalised address rather than `<address>:<product>`, so
+    /// `WHERE subject = ?` reaches it and a subject access request is not
+    /// answered with an apology. `subject_via` is the hop that makes an
+    /// account id match it: rows belong to whoever holds the `users` row
+    /// with that `primary_email`.
+    ///
+    /// [`Disposition::Erase`] and not
+    /// [`Anonymise`](Disposition::Anonymise): the address *is* the primary
+    /// key, so there is no column left to blank, and the row's only other
+    /// value is when it was written. Keeping a throttle entry for an
+    /// erased account would also mean the address stayed readable in a
+    /// table after the account holding it was gone.
+    fn personal_data(&self) -> &'static [PersonalDataSet] {
+        const SETS: &[PersonalDataSet] = &[PersonalDataSet {
+            table: "auth_magic_link_send_cooldown",
+            subject: "subject",
+            kind: DataKind::Contact,
+            disposition: Disposition::Erase,
+            description: "When we last emailed you a sign-in link, so the same address is not \
+                          mailed again within the minute.",
+            redacted: &[],
+            subject_via: Some(SubjectVia {
+                table: "users",
+                subject: "id",
+                key: "primary_email",
+            }),
+        }];
+        SETS
     }
 
     fn emits(&self) -> &'static [&'static str] {
@@ -223,7 +269,11 @@ impl Module for MagicLink {
     }
 
     fn migrations(&self) -> Migrations {
-        Migrations::EMPTY
+        const MIGRATIONS: [SqlMigration; 1] = [MIGRATION_SEND_COOLDOWN];
+        // Refuses a gap, a duplicate or an entry out of order at build
+        // time (issue #27).
+        const _: () = cratefield_core::assert_migration_set(&MIGRATIONS);
+        Migrations::sqlite(&MIGRATIONS)
     }
 
     fn validate_config(&self, cfg: &dyn Config) -> Result<(), ConfigError> {
@@ -278,14 +328,37 @@ mod tests {
     }
 
     #[test]
-    fn the_module_owns_no_tables_and_needs_a_mailer() {
+    fn the_module_owns_only_its_cooldown_and_needs_a_mailer() {
         let module = MagicLink::new();
         assert_eq!(module.name(), "auth-magic-link");
-        assert!(module.tables().is_empty());
+        // One table, and it is the send-cooldown ledger. `auth-core` owns
+        // `single_use_tokens` and every other row this module touches; a
+        // second name appearing here means something was declared in the
+        // wrong module.
+        assert_eq!(module.tables(), ["auth_magic_link_send_cooldown"]);
         // Required, not optional: a magic link with nowhere to send it is
         // not a degraded feature, it is a broken one.
         assert!(module.requires().contains(&Port::Mailer));
         assert!(module.public_writes());
+    }
+
+    #[test]
+    fn every_table_the_migration_creates_is_declared_and_described() {
+        // The three lists have to agree, and nothing else here checks it:
+        // `fz data export` walks `tables()`, subject access and erasure
+        // walk `personal_data()`, and a table in neither is outside all of
+        // them (issue #272).
+        let module = MagicLink::new();
+        assert!(
+            cratefield_core::unlisted_tables(&module).is_empty(),
+            "the migration creates a table `tables()` does not name: {:?}",
+            cratefield_core::unlisted_tables(&module)
+        );
+        assert!(
+            cratefield_core::undeclared_tables(&module).is_empty(),
+            "a declared table has no `personal_data()` entry: {:?}",
+            cratefield_core::undeclared_tables(&module)
+        );
     }
 
     #[test]

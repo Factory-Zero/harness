@@ -73,6 +73,31 @@ consumes therefore produce **one session and one refusal**, rather than two
 sessions or a lost update. Tested by driving both futures together;
 replacing the statement with a read-then-write fails that test.
 
+## One live link, and one mail a minute
+
+Two things keep the window small, and both are the database's to enforce
+rather than a caller's to respect:
+
+- **One send per address per minute.** `auth_magic_link_send_cooldown` is
+  core's [`SendCooldown`](https://docs.rs/cratefield-core) ledger (issue
+  #133): a guarded `UPDATE` then an `INSERT ... ON CONFLICT DO NOTHING`,
+  exactly one of which reports a row per window. A refused send answers
+  byte-for-byte like a successful one, because a caller who can tell "you
+  already asked" from "no such account" can enumerate addresses. A minute
+  rather than the hour the waitlist uses: this mail is the door, and
+  somebody who did not receive it should not be locked out for an hour.
+- **A new link retires the one it replaces.** Issuing stamps `consumed_at`
+  on that account's unconsumed, unexpired magic-link tokens first, so at
+  most one is live. Two live links are two windows in which a forwarded
+  mail or a link scanner signs somebody in, and the person who asked for a
+  second has already said the first is not the one they are using. Scoped
+  to one account *and* one token kind — retiring a user's outstanding
+  authorization codes because they asked for a sign-in link would break a
+  parallel `/authorize`.
+
+A retired link fails exactly as a made-up one does, so holding one teaches
+nothing.
+
 ## What a caller can never learn
 
 - A known and an unknown address get the same `202` and the same body.
@@ -95,11 +120,12 @@ clients that strip anchors.
 
 ## Known gaps
 
-- **Nothing rate-limits per address across deployments.** The `RateLimiter`
-  port is per-isolate where the adapter is in-memory; a KV-backed limiter
-  is the deployment's choice.
-- **No "resend" throttle beyond the rate limiter.** Asking twice sends two
-  mails, both valid until one is used.
+- **The `RateLimiter` port is still per-isolate** where the adapter is
+  in-memory, and a KV-backed limiter is the deployment's choice. The
+  *mail* is no longer exposed to that: `auth_magic_link_send_cooldown` is
+  a row the database enforces, one send per address per minute, which
+  holds across isolates and holds when the limiter fails open. General
+  request limiting is unchanged.
 - **The link does not carry the client's `state`.** A magic link that
   resumes a pending `/authorize` carries it as `return_to`, which is enough
   today because `/authorize` re-reads its own query.

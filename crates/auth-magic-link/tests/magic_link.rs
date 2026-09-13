@@ -540,6 +540,10 @@ fn a_return_to_survives_the_round_trip_and_an_absolute_one_does_not() {
             Some("/v1/auth-core/authorize?x=1")
         );
 
+        // Past the send cooldown, or the second request below is refused
+        // and this test reads the first mail twice.
+        kit.clock.0.fetch_add(61, Ordering::SeqCst);
+
         // An absolute one is an open redirect, and is dropped for the
         // default rather than followed.
         post(json!({ "email": "ada@example.com", "return_to": "https://evil.example" })).await;
@@ -583,5 +587,100 @@ fn a_token_of_another_kind_cannot_be_spent_here() {
         assert_eq!(response.status, StatusCode::BAD_REQUEST);
         assert!(response.cookie("__Host-fz_session").is_none());
         assert_eq!(count(&kit, "sessions"), 0);
+    });
+}
+
+#[test]
+fn a_second_request_inside_the_window_sends_no_second_mail() {
+    pollster::block_on(async {
+        // The rate limiter is a distributed counter whose transport can
+        // fail open; this backstop is a row the database enforces. There
+        // is no `RateLimiter` port in this kit at all, which is exactly
+        // the fail-open case.
+        let kit = kit();
+        seed(&kit, "ada@example.com", false).await;
+
+        let first = request_link(&kit, "ada@example.com").await;
+        let second = request_link(&kit, "ada@example.com").await;
+        let third = request_link(&kit, "ada@example.com").await;
+
+        assert_eq!(kit.outbox.count(), 1, "the window leaked a second mail");
+
+        // And a refusal is indistinguishable from a send: a caller who can
+        // tell "you already asked" from "no such account" can enumerate
+        // addresses, which is what every other branch of this handler is
+        // careful about.
+        assert_eq!(second.status, first.status);
+        assert_eq!(second.body, first.body);
+        assert_eq!(third.body, first.body);
+        let unknown = request_link(&kit, "nobody@example.com").await;
+        assert_eq!(second.body, unknown.body);
+
+        // The window is per address, not global.
+        seed(&kit, "grace@example.com", false).await;
+        request_link(&kit, "grace@example.com").await;
+        assert_eq!(kit.outbox.count(), 2, "one address blocked another");
+
+        // And it ends.
+        kit.clock.0.fetch_add(61, Ordering::SeqCst);
+        request_link(&kit, "ada@example.com").await;
+        assert_eq!(kit.outbox.count(), 3, "the window never reopened");
+    });
+}
+
+#[test]
+fn a_new_link_retires_the_one_it_replaces() {
+    pollster::block_on(async {
+        // Two live links are two windows in which a forwarded mail or a
+        // link scanner signs somebody in. Asking for a second one says the
+        // first is not the one being used.
+        let kit = kit();
+        seed(&kit, "ada@example.com", false).await;
+
+        request_link(&kit, "ada@example.com").await;
+        let first = kit.outbox.last_token().expect("a token");
+
+        kit.clock.0.fetch_add(61, Ordering::SeqCst);
+        request_link(&kit, "ada@example.com").await;
+        let second = kit.outbox.last_token().expect("a token");
+        assert_ne!(first, second, "the same token was mailed twice");
+
+        // The newest link works.
+        let response = click(&kit, &second).await;
+        assert_eq!(response.status, StatusCode::FOUND, "{}", response.text());
+
+        // The one it replaced does not — and fails the way a made-up token
+        // does, so holding a retired link teaches nothing.
+        let retired = click(&kit, &first).await;
+        let invented = click(&kit, "a-token-that-was-never-issued").await;
+        assert_eq!(retired.status, invented.status);
+        assert_eq!(retired.body, invented.body);
+    });
+}
+
+#[test]
+fn retiring_a_link_leaves_another_accounts_link_alone() {
+    pollster::block_on(async {
+        // The retire is scoped to one user and one kind. A `WHERE` that
+        // lost either would sign everybody out of their pending links the
+        // moment one person asked for a second.
+        let kit = kit();
+        seed(&kit, "ada@example.com", false).await;
+        seed(&kit, "grace@example.com", false).await;
+
+        request_link(&kit, "grace@example.com").await;
+        let graces = kit.outbox.last_token().expect("a token");
+
+        request_link(&kit, "ada@example.com").await;
+        kit.clock.0.fetch_add(61, Ordering::SeqCst);
+        request_link(&kit, "ada@example.com").await;
+
+        let response = click(&kit, &graces).await;
+        assert_eq!(
+            response.status,
+            StatusCode::FOUND,
+            "another account's link was retired: {}",
+            response.text()
+        );
     });
 }
