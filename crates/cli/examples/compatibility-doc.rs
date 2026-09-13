@@ -67,7 +67,15 @@ fn consumers(root: &Path) -> Vec<Consumer> {
         };
         out.push(Consumer {
             version: package["version"].as_str().unwrap_or_default().to_string(),
-            published: package["publish"] != Value::Bool(false),
+            // `cargo metadata` renders `publish = false` as an empty array
+            // and an unrestricted crate as `null` — never as the boolean
+            // `false`, which is what this compared against until 2026-09-13.
+            // The marker below had therefore never rendered for any of the
+            // 20+ unpublished crates in the table. A non-empty array is a
+            // registry allow-list, which still counts as published.
+            published: package["publish"]
+                .as_array()
+                .is_none_or(|registries| !registries.is_empty()),
             core_req: req.to_string(),
             name,
         });
@@ -129,14 +137,17 @@ fn markdown(rows: &[Consumer]) -> String {
     out.push_str("| Crate | Version | HARNESS_API | `cratefield-core` range |\n");
     out.push_str("|---|---|---|---|\n");
     for row in rows {
-        let name = if row.published {
-            row.name.clone()
+        // The marker sits outside the backticks: inside them the asterisks
+        // are literal text in a code span, not italics.
+        let mark = if row.published {
+            ""
         } else {
-            format!("{} *(not published)*", row.name)
+            " *(not published)*"
         };
         let _ = writeln!(
             out,
-            "| `{name}` | {} | {HARNESS_API} | `{}` — `{}` |",
+            "| `{}`{mark} | {} | {HARNESS_API} | `{}` — `{}` |",
+            row.name,
             row.version,
             row.core_req,
             range(&row.core_req),

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples/*", "ventures/cratefield-waitlist"]
+members = ["crates/*", "examples/*", "ventures/cratefield-waitlist", "bench/*"]
 # `crates/cli-acceptance/fixture` is a fixture, not a package. The three
 # venture-side `fz` binaries are excluded for the reason their own manifests
 # give: they are native builds that link a venture's harness so

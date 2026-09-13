@@ -871,6 +871,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratefield-bench-write-ceiling"
+version = "0.1.1"
+dependencies = [
+ "cratefield-adapter-sqlite",
+ "cratefield-core",
+ "cratefield-kms",
+ "cratefield-secrets",
+ "pollster",
+]
+
+[[package]]
 name = "cratefield-billing"
 version = "0.1.1"
 dependencies = [

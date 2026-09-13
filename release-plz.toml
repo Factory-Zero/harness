@@ -20,6 +20,12 @@ publish = false
 name = "cratefield-cli-acceptance"
 publish = false
 
+# A measuring instrument, not a library: it exists to produce the numbers in
+# docs/BENCHMARKS.md from this repository's own code (issue #156).
+[[package]]
+name = "cratefield-bench-write-ceiling"
+publish = false
+
 # Held back until the CRUD layer and the first in-repo consumer land.
 # Nothing depends on it yet, and its public surface is still moving, which
 # a 0.1 on crates.io would pin permanently. Its first publish is manual
