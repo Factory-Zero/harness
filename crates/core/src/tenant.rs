@@ -18,6 +18,12 @@
 /// `serializes_as_the_registry_text` together pin that.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
+// The lifecycle will grow again — #154 has a promotion path in it — and
+// adding a variant to an exhaustive public enum is a breaking change for
+// every downstream `match`. This release breaks anyway, adding
+// `Offboarding` and `Archived`; spending that break once buys every later
+// status for free.
+#[non_exhaustive]
 pub enum TenantStatus {
     /// Reconciled and serving.
     Active,
@@ -26,6 +32,13 @@ pub enum TenantStatus {
     /// The last reconciliation failed: requests answer
     /// `503 tenant-degraded` until a boot succeeds.
     Degraded,
+    /// Being retired: the export and key shred of
+    /// `docs/TENANT-ONBOARDING.md` §2 are under way. It has stopped
+    /// serving and will not start again.
+    Offboarding,
+    /// Retired. The database is dropped and the keys are destroyed;
+    /// nothing about this tenant can be served or recovered.
+    Archived,
 }
 
 impl TenantStatus {
@@ -36,6 +49,8 @@ impl TenantStatus {
             Self::Active => "active",
             Self::Provisioning => "provisioning",
             Self::Degraded => "degraded",
+            Self::Offboarding => "offboarding",
+            Self::Archived => "archived",
         }
     }
 
@@ -47,6 +62,8 @@ impl TenantStatus {
         match status {
             "active" => Self::Active,
             "provisioning" => Self::Provisioning,
+            "offboarding" => Self::Offboarding,
+            "archived" => Self::Archived,
             _ => Self::Degraded,
         }
     }
@@ -173,6 +190,17 @@ impl Resolution {
         match self {
             Self::Found { id, status } if status == TenantStatus::Active => {
                 Ok(Tenant::new(id, status))
+            }
+            // Retired, in either sense: the caller is not waiting for a
+            // boot, and there is nothing to come back to. Answered as an
+            // unknown tenant so a retired tenant and a host that never
+            // existed are indistinguishable from outside — "offboarding"
+            // is a fact about a customer, not something to publish to
+            // whoever guesses the host.
+            Self::Found { status, .. }
+                if status == TenantStatus::Offboarding || status == TenantStatus::Archived =>
+            {
+                Err(&crate::problems::SLUGS.unknown_tenant)
             }
             Self::Found { .. } => Err(&crate::problems::SLUGS.tenant_degraded),
             Self::Unknown => Err(&crate::problems::SLUGS.unknown_tenant),
@@ -341,6 +369,56 @@ mod tests {
             assert_eq!(problem.slug, "tenant-degraded", "for {status}");
             assert_eq!(problem.status.as_u16(), 503);
         }
+    }
+
+    #[test]
+    fn a_retired_tenant_is_indistinguishable_from_one_that_never_existed() {
+        // Not `tenant-degraded`: that says "come back later", and there is
+        // nothing to come back to. Answering as unknown also keeps
+        // "this customer left" from being readable by anyone who guesses
+        // the host.
+        for status in [TenantStatus::Offboarding, TenantStatus::Archived] {
+            let retired = found(status).admit().expect_err("must not serve");
+            let never_existed = Resolution::Unknown.admit().expect_err("must not serve");
+            assert_eq!(
+                retired.slug, never_existed.slug,
+                "{status} must answer exactly as an unknown host does"
+            );
+        }
+    }
+
+    #[test]
+    fn every_status_round_trips_through_the_registry_text() {
+        for status in [
+            TenantStatus::Active,
+            TenantStatus::Provisioning,
+            TenantStatus::Degraded,
+            TenantStatus::Offboarding,
+            TenantStatus::Archived,
+        ] {
+            assert_eq!(
+                TenantStatus::parse(status.as_str()),
+                status,
+                "{status} does not survive a trip through the registry"
+            );
+        }
+    }
+
+    #[test]
+    fn only_active_serves() {
+        // The whole lifecycle, stated once: exactly one status admits.
+        for status in [
+            TenantStatus::Provisioning,
+            TenantStatus::Degraded,
+            TenantStatus::Offboarding,
+            TenantStatus::Archived,
+        ] {
+            assert!(
+                found(status).admit().is_err(),
+                "{status} must not serve requests"
+            );
+        }
+        assert!(found(TenantStatus::Active).admit().is_ok());
     }
 
     #[test]
