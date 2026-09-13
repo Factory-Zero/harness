@@ -765,6 +765,21 @@ fn validate_field(errors: &mut ConfigError, table: &TableDef, field: &FieldDef) 
                     errors.push(format!("{at}: enum value `{value}` is declared twice"));
                 }
                 seen.push(value);
+                // A member reaches the DDL inside a `CHECK (... IN (...))`
+                // and the renderer only doubles quotes, so a control
+                // character goes through raw: a NUL truncates the
+                // statement in SQLite and is rejected outright by
+                // PostgreSQL, and a newline produces a schema file nobody
+                // can read. Escaping it would keep a value no caller
+                // wants, so the declaration is refused instead. The
+                // position is named because the character itself does not
+                // print.
+                if let Some(position) = value.chars().position(char::is_control) {
+                    errors.push(format!(
+                        "{at}: enum value `{}` holds a control character at position {position}",
+                        value.escape_debug()
+                    ));
+                }
             }
         }
         FieldKind::Boolean | FieldKind::Timestamp | FieldKind::Uuid | FieldKind::Json => {}

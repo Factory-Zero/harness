@@ -358,6 +358,21 @@ The rules, which are also the rules a generated client has to match:
 Errors come out in a fixed order: declared fields in declaration order,
 then unknown keys sorted by name.
 
+### Normalisation is a separate step
+
+`normalize_row` rewrites every declared `format = "email"` field into its
+canonical form — trim, Unicode NFC, lowercase — and it is **not** part of
+`validate_row`. The validator coerces nothing and trims nothing, which is
+what lets the corpus mean one thing in two languages, so a quiet rewrite
+inside it would break the contract the corpus exists to hold.
+
+Running it is not optional, though. `unique` is enforced by the database
+on the bytes it is handed, so without normalisation `Alice@Example.COM`
+and `alice@example.com` are two rows, while every module in the harness
+treats them as one address (`cratefield_core::normalize_email`, issue
+#10). The writer calls `normalize_row` and then `validate_row`, in that
+order.
+
 ## The conformance corpus
 
 `corpus/rows.json` holds triples of table, input and expected verdict.
@@ -426,28 +441,32 @@ assertion here; a validator that distinguishes null from a missing key
 will still disagree about a required field set to `null`; and
 uniqueness, foreign keys, indexes and defaults do not appear at all.
 
-## Known gaps
+## Where the two engines are not the same
 
-Reproduced in review against SQLite 3.51.0 and PostgreSQL 15.13, and
-deliberately left for a follow-up rather than fixed here:
+The DDL renders the same shape for both dialects, but three guarantees are
+weaker on SQLite. Written down because a reader of the column-type table
+would assume otherwise, and each one is a difference in what the engine
+actually enforces:
 
-- A JSON number above `i64::MAX` is accepted and silently truncated, both
-  by the row validator and by a rendered `DEFAULT`.
-- `corpus/rows.json` has no case for a bound above 2^53, which is the one
-  drift class a TypeScript client cannot reproduce.
-- A declared `email` field is not normalised before storage, so `unique`
-  on one means something different here than it does in the modules.
-- A control character inside an enum member is escaped as itself and
-  produces DDL neither engine can parse.
-- The unknown-key error echoes a caller-supplied key into the problem
-  `detail` with no length bound.
-- The JSON Schema view lists properties in declaration order only because
-  `schemars` pulls in `serde_json/preserve_order`, which this workspace
-  happens to unify in; the crate does not require it itself.
-- Three dialect divergences are unstated: an integer primary key is a
-  rowid alias in SQLite, a boolean column is unconstrained there because
-  it is stored as `INTEGER`, and foreign keys are inert in SQLite without
-  `PRAGMA foreign_keys=ON`, which nothing in the repository sets.
+- An **integer primary key is a rowid alias** in SQLite: it auto-assigns
+  when a write omits it and accepts no other type. A Postgres
+  `BIGINT PRIMARY KEY` is an ordinary column that must be supplied. The
+  row validator requires a primary key to be present or defaulted so the
+  two agree; do not rely on the database filling it in.
+- A **boolean column is unconstrained** on SQLite, because it is stored as
+  `INTEGER` and nothing stops a direct SQL write of `7`. Postgres rejects
+  it. The row validator is what makes the two agree, so a write that
+  bypasses it is checked on only one engine.
+- **Foreign keys are inert** on SQLite without `PRAGMA foreign_keys=ON`,
+  which is per connection, off by default, and set nowhere in this
+  repository. `REFERENCES` renders in both dialects; only Postgres
+  enforces it today.
+
+None of the three is worked around here: a generated `CHECK`, or a pragma
+issued behind the caller's back, would take the output outside the
+portable subset the hand-written module migrations use. They belong to
+the writer and to connection setup, and are recorded so that layer
+inherits a list rather than a surprise.
 
 ## Not built here
 

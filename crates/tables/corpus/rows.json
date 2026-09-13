@@ -30,7 +30,15 @@
     "   s.length. No normalisation: e + combining acute is two characters.",
     "8. Nothing is trimmed. Whitespace is part of the value and counts toward length.",
     "9. Bounds are inclusive at both ends.",
-    "10. Uniqueness and foreign keys are not checked here. They read other rows."
+    "10. Uniqueness and foreign keys are not checked here. They read other rows.",
+    "11. An integer is rejected unless it lands in [-2^63, 2^63-1] exactly. A number",
+    "    outside it is never truncated into range: storing i64::MAX for a row that",
+    "    said 9223372036854775809 is a value nothing reports as wrong.",
+    "",
+    "The `bound:` cases cannot be read through JSON.parse. 2^53 + 1 loses its last bit",
+    "in a double, which is every number JavaScript has, so a JS harness must read them",
+    "from the raw text or skip them and record that it did. Skipping them silently is",
+    "the drift they exist to catch."
   ],
   "codes": [
     "not_an_object",
@@ -554,6 +562,49 @@
       "table": "post",
       "input": { "id": "not-a-uuid", "title": "Hello" },
       "expect": { "verdict": "reject", "errors": [{ "field": "id", "code": "bad_format" }] }
+    },
+
+    {
+      "name": "bound: 2^53 + 1 is accepted and a JavaScript reader cannot hold it",
+      "why": "The one drift class a JS implementation cannot reproduce by value: JSON.parse turns this into 9007199254740992. The verdict is still accept.",
+      "table": "typed",
+      "input": { "id": "x", "count": 9007199254740993 },
+      "expect": { "verdict": "accept" }
+    },
+    {
+      "name": "bound: i64::MAX is accepted",
+      "why": "The top of the range, written as an exact integer, which is the only unambiguous way to state a value this large.",
+      "table": "typed",
+      "input": { "id": "x", "count": 9223372036854775807 },
+      "expect": { "verdict": "accept" }
+    },
+    {
+      "name": "bound: i64::MAX + 1 is rejected, never truncated",
+      "why": "It has a precise value and that value does not fit. Accepting it and storing i64::MAX is a row that is silently one off.",
+      "table": "typed",
+      "input": { "id": "x", "count": 9223372036854775808 },
+      "expect": { "verdict": "reject", "errors": [{ "field": "count", "code": "wrong_type" }] }
+    },
+    {
+      "name": "bound: i64::MIN is accepted",
+      "why": "The bottom of the range, exact.",
+      "table": "typed",
+      "input": { "id": "x", "count": -9223372036854775808 },
+      "expect": { "verdict": "accept" }
+    },
+    {
+      "name": "bound: i64::MIN - 1 is rejected, never truncated",
+      "why": "It fits neither i64 nor u64, so it arrives as a double and rounds exactly onto i64::MIN. Every integer it could have been is out of range, so it is refused rather than guessed.",
+      "table": "typed",
+      "input": { "id": "x", "count": -9223372036854775809 },
+      "expect": { "verdict": "reject", "errors": [{ "field": "count", "code": "wrong_type" }] }
+    },
+    {
+      "name": "bound: a float spelling inside the range is still an integer",
+      "why": "Rule 6 is unchanged: JSON cannot tell 1e18 from 1000000000000000000. The bound is about range, not about how the number is written.",
+      "table": "typed",
+      "input": { "id": "x", "count": 1e18 },
+      "expect": { "verdict": "accept" }
     }
   ]
 }

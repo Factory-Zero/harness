@@ -75,5 +75,7 @@ pub use schema::{
     FieldDef, FieldKind, ForeignKey, MAX_IDENTIFIER_CHARS, RESERVED_PREFIXES, RESERVED_WORDS,
     Schema, TableDef, TextFormat, is_identifier,
 };
-pub use validate::{MAX_DETAIL_ERRORS, RowError, RowErrors, validate_row};
+pub use validate::{
+    MAX_DETAIL_ERRORS, MAX_UNKNOWN_KEY_CHARS, RowError, RowErrors, normalize_row, validate_row,
+};
 pub use value::{ErrorCode, ValueError, check_value, is_rfc3339, is_url, is_uuid};

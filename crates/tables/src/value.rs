@@ -263,17 +263,40 @@ fn as_number(value: &Value) -> Result<f64, ValueError> {
 /// Shared with the DDL renderer, so a default written as `42.0` in the
 /// manifest renders as the literal `42` rather than as a quoted string.
 pub(crate) fn integral(value: &Value) -> Option<i64> {
-    if let Some(integer) = value.as_i64() {
+    // The bounds are literals, not `i64::MIN/MAX as f64`. `i64::MAX as
+    // f64` rounds *up* to 2^63, so `number <= i64::MAX as f64` admitted
+    // 2^63 itself and the saturating `as` cast then stored `i64::MAX` —
+    // `9223372036854775809` was accepted and written as
+    // `9223372036854775807`. Both literals are exactly representable and
+    // the upper one is exclusive.
+    const MIN: f64 = -9_223_372_036_854_775_808.0; // -2^63, exact
+    const ABOVE_MAX: f64 = 9_223_372_036_854_775_808.0; // 2^63, exact
+
+    let number = value.as_number()?;
+    if let Some(integer) = number.as_i64() {
+        // Exact integer text inside `i64`. `serde_json` only stores it
+        // this way when the source really was an integer in range.
         return Some(integer);
     }
-    let number = value.as_f64()?;
-    #[allow(clippy::cast_precision_loss)]
-    let in_range = number >= i64::MIN as f64 && number <= i64::MAX as f64;
-    if !number.is_finite() || number.fract() != 0.0 || !in_range {
+    // An exact integer above `i64::MAX` needs no branch of its own: it
+    // arrives as a `u64`, whose `f64` is never below 2^63, so the upper
+    // bound below refuses it. Checking `as_u64` first as well looked
+    // careful and was unreachable — disabling it changed no verdict.
+    let float = number.as_f64()?;
+    if !float.is_finite() || float.fract() != 0.0 || float < MIN || float >= ABOVE_MAX {
+        return None;
+    }
+    if float == MIN {
+        // A float that lands exactly on -2^63 reached here as a float,
+        // so its source text was not the integer -9223372036854775808
+        // (that fits `i64` and would have been stored as one). It was
+        // some integer below the range, every one of which rounds here:
+        // `-9223372036854775809` was accepted and written as `i64::MIN`.
+        // Refuse the boundary rather than pick one of the candidates.
         return None;
     }
     #[allow(clippy::cast_possible_truncation)]
-    Some(number as i64)
+    Some(float as i64)
 }
 
 fn check_length(text: &str, min_len: Option<u32>, max_len: Option<u32>) -> Result<(), ValueError> {
