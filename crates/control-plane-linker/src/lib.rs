@@ -39,6 +39,9 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashMap;
+// Test/tooling fixtures, not request state (ADR 0007) — the scoped allow
+// follows the policy in the workspace `clippy.toml`.
+#[allow(clippy::disallowed_types)]
 use std::sync::Mutex;
 
 use cratefield_manifest::{
@@ -189,6 +192,7 @@ pub trait ComposedStore {
 
 /// An in-memory [`ComposedStore`] — the test and tooling implementation.
 /// Where real bundles physically live is a control-plane decision.
+#[allow(clippy::disallowed_types)] // test fixture, not request state
 #[derive(Default)]
 pub struct MemoryStore {
     entries: Mutex<HashMap<String, CachedArtifact>>,
@@ -216,6 +220,7 @@ impl ComposedStore for MemoryStore {
 /// An in-memory [`SegmentSource`] — the test implementation. Real segments
 /// come from a release store that does not exist yet; no module has a
 /// published digest (the catalog pins are placeholders).
+#[allow(clippy::disallowed_types)] // test fixture, not request state
 #[derive(Default)]
 pub struct MemorySegments {
     segments: Mutex<HashMap<(String, String), Vec<u8>>>,
@@ -226,6 +231,11 @@ impl MemorySegments {
     /// Store a segment under `(slug, digest)`. The caller is responsible for
     /// the digest matching the bytes — production segments are pinned by the
     /// catalog, and [`link`] verifies regardless.
+    ///
+    /// # Panics
+    ///
+    /// Never on valid input; the fixture mutex is only poisoned if a closure
+    /// already panicked while holding it.
     pub fn insert(&self, slug: &str, digest: &str, bytes: Vec<u8>) {
         self.segments
             .lock()
@@ -236,6 +246,11 @@ impl MemorySegments {
     /// How many times any segment was fetched. The cache-hit assertion reads
     /// this: a hit path that consults the segment source is a miss in
     /// disguise.
+    ///
+    /// # Panics
+    ///
+    /// Never on valid input; the fixture mutex is only poisoned if a closure
+    /// already panicked while holding it.
     #[must_use]
     pub fn fetches(&self) -> usize {
         *self.fetches.lock().expect("memory segment store poisoned")

@@ -65,22 +65,23 @@ fn module(slug: &str, seed: u8, tier: Tier, depends_on: &[&str]) -> (CatalogModu
 /// matching its pins, exactly as a release store would hold them.
 fn six_modules() -> (Catalog, MemorySegments) {
     let (core, core_bytes) = module("core", 1, Tier::Core, &[]);
-    let (a, ab) = module("email-signup", 2, Tier::Optional, &[]);
-    let (b, bb) = module("waitlist", 3, Tier::Optional, &[]);
-    let (c, cb) = module("cms", 4, Tier::Optional, &[]);
-    let (d, db) = module("notifications", 5, Tier::Optional, &["core"]);
-    let (e, eb) = module("privacy", 6, Tier::Optional, &["core"]);
+    let (email_signup, email_bytes) = module("email-signup", 2, Tier::Optional, &[]);
+    let (waitlist, waitlist_bytes) = module("waitlist", 3, Tier::Optional, &[]);
+    let (cms, cms_bytes) = module("cms", 4, Tier::Optional, &[]);
+    let (notifications, notifications_bytes) =
+        module("notifications", 5, Tier::Optional, &["core"]);
+    let (privacy, privacy_bytes) = module("privacy", 6, Tier::Optional, &["core"]);
     let catalog = Catalog {
-        modules: vec![core, a, b, c, d, e],
+        modules: vec![core, email_signup, waitlist, cms, notifications, privacy],
     };
     let segments = MemorySegments::default();
     for (slug, bytes) in [
         ("core", core_bytes),
-        ("email-signup", ab),
-        ("waitlist", bb),
-        ("cms", cb),
-        ("notifications", db),
-        ("privacy", eb),
+        ("email-signup", email_bytes),
+        ("waitlist", waitlist_bytes),
+        ("cms", cms_bytes),
+        ("notifications", notifications_bytes),
+        ("privacy", privacy_bytes),
     ] {
         segments.insert(slug, &sha256_hex(&bytes), bytes);
     }
@@ -375,7 +376,7 @@ fn changing_a_pinned_version_composes_a_new_bundle_not_the_old_one() {
 }
 
 /// The measurement behind `docs/control-plane/LINKER.md`: six synthetic
-/// segments (~350 KiB total), timed cold and on a hit. Prints, and asserts
+/// segments (24 KiB total), timed cold and on a hit. Prints, and asserts
 /// only the structural facts the numbers depend on (hit fetches nothing) —
 /// wall-clock assertions would flake CI; the doc carries the numbers.
 #[test]
