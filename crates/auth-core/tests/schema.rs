@@ -153,7 +153,16 @@ fn no_column_can_hold_a_login_secret_in_the_clear() {
 
 #[test]
 fn schema_passes_the_portable_sql_lint() {
-    for sql in migration_sqls() {
+    // Every assertion below is an absence, and a loop over nothing
+    // satisfies all of them: a module that shipped no migrations would
+    // pass this test while having no schema at all.
+    let sqls = migration_sqls();
+    assert!(
+        sqls.len() >= 6,
+        "auth-core ships {} migrations — the lint below is looking at nothing",
+        sqls.len()
+    );
+    for sql in sqls {
         let haystack = sql.to_ascii_lowercase();
         for token in BANNED_SQL_TOKENS {
             assert!(

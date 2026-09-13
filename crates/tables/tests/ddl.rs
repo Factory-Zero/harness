@@ -237,6 +237,12 @@ fn generated_ddl_only_creates() {
             .ddl(dialect)
             .expect("renders")
             .to_uppercase();
+        // The three absences below are all satisfied by an empty string,
+        // so prove there is SQL to be forward-only about first.
+        assert!(
+            sql.contains("CREATE TABLE"),
+            "{dialect:?} rendered no table: {sql}"
+        );
         assert!(!sql.contains("DROP "), "forward-only: no DROP");
         assert!(!sql.contains("ALTER "), "forward-only: no ALTER");
         assert!(!sql.contains("DELETE "), "forward-only: no DELETE");
