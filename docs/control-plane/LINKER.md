@@ -61,12 +61,19 @@ digested releases exist yet. The linker's cost is dominated by hashing
 those bytes, so these are a floor, not a scaling statement: nothing
 larger has been measured.
 
-| Path | Measured (three runs) |
-| :--- | ---: |
-| Cache hit (config-only change): key lookup + digest check | **28–35 µs** |
-| Compose six segments, cold (24 KiB) | **96–145 µs** |
+| Path | Idle machine | Loaded machine |
+| :--- | ---: | ---: |
+| Cache hit (config-only change): key lookup + digest check | **28–35 µs** | **152–155 µs** |
+| Compose six segments, cold (24 KiB) | **96–145 µs** | **327–367 µs** |
 
-Both include the sha256 of every segment and of the bundle.
+Both include the sha256 of every segment and of the bundle. Three runs per
+column. The second column is the same test on the same machine while it was
+running several other builds (load average ≈ 18), and it is there because a
+single set of numbers with no stated conditions is not reproducible: a reader
+who runs this on a busy machine and measures three times the published figure
+has no way to tell whether the number was wrong or their machine was. Both
+columns are microseconds, which is the claim that matters; contention moves
+the constant, not the order of magnitude.
 
 Against the issue's targets, honestly:
 
