@@ -173,6 +173,15 @@ default = "untitled"
 "#,
     );
     let rendered = json_schema(schema.table("post").unwrap()).to_string();
+    // An empty view leaks nothing and describes nothing. The four
+    // absences below are only worth anything once the fields that carry
+    // those properties are in the rendering.
+    for present in ["\"id\"", "\"slug\"", "properties"] {
+        assert!(
+            rendered.contains(present),
+            "the view does not describe {present}, so nothing below is checking anything: {rendered}"
+        );
+    }
     for absent in ["unique", "index", "default", "foreignKey"] {
         assert!(!rendered.contains(absent), "{absent} leaked: {rendered}");
     }

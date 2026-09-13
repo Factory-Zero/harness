@@ -447,6 +447,23 @@ async fn a_refusal_answers_nothing_about_the_address() {
     )
     .await;
 
+    // This test is named for a refusal and never checked that it got one.
+    // A forged signature that started being *accepted* would answer 200
+    // with a body naming nobody, and the absence below would still hold —
+    // so the one thing this test exists to protect would be gone and it
+    // would stay green.
+    assert_eq!(
+        answer.status,
+        http::StatusCode::UNAUTHORIZED,
+        "a forged signature was not refused: {}",
+        answer.text()
+    );
+    assert_eq!(
+        suppressions(&kit).await,
+        vec![(None, None)],
+        "a refused webhook still suppressed the address"
+    );
+
     let body = answer.text();
     assert!(
         !body.contains(ADDRESS) && !body.contains(SECRET),

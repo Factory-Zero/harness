@@ -1069,6 +1069,14 @@ fn the_status_page_says_nothing_about_the_account() {
         let status = get(&kit, &format!("{STATUS}?code={code}"), &[]).await;
         assert_eq!(status.status, StatusCode::OK);
         let text = status.text();
+        // An empty 200 would satisfy both absences and tell the person
+        // who followed the URL nothing at all. The page has to answer the
+        // question it exists to answer before "it says nothing else"
+        // means anything.
+        assert!(
+            text.to_lowercase().contains("delet"),
+            "the status page does not say what happened: {text}"
+        );
         // A leaked URL must not become a disclosure.
         assert!(!text.contains("meta-subject-1"), "{text}");
         assert!(!text.contains("Ada"), "{text}");

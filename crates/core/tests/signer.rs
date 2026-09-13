@@ -533,6 +533,13 @@ fn debug_never_prints_key_material() {
         format!("{signer:?}"),
         format!("{:?}", signer.ring_states()),
     ] {
+        // A `Debug` that printed nothing would hide the key material and
+        // everything else with it, satisfying the absence while making
+        // the type undebuggable. It has to still name the keys it holds.
+        assert!(
+            rendered.contains("Cur") && rendered.contains("Prev"),
+            "the debug output names neither key, so it is not proving anything: {rendered}"
+        );
         assert!(
             !rendered.contains("0123456789abcdef"),
             "key material in debug output: {rendered}"

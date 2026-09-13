@@ -373,6 +373,12 @@ async fn every_error_display_omits_the_key() {
         let (http, _rx) = fixture(status, body, None);
         let err = adapter(http).send(message()).await.expect_err("must fail");
         let rendered = err.to_string();
+        // An empty rendering omits the key and everything else. The
+        // display has to remain useful for this absence to mean anything.
+        assert!(
+            rendered.len() > 8,
+            "status {status} rendered an error that says nothing: {rendered:?}"
+        );
         assert!(
             !rendered.contains(DUMMY_KEY),
             "status {status} leaked the key: {rendered}"

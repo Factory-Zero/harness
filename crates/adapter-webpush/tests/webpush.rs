@@ -605,6 +605,13 @@ fn no_error_message_carries_the_subscription_endpoint() {
             Err(error) => error.to_string(),
             Ok(outcome) => panic!("status {status} should not have delivered: {outcome:?}"),
         };
+        // An error that rendered as an empty string would satisfy both
+        // absences and tell an operator nothing. The message has to
+        // survive, it just must not carry the endpoint.
+        assert!(
+            message.contains(&status.to_string()) || message.len() > 8,
+            "status {status} produced a message that says nothing: {message:?}"
+        );
         assert!(
             !message.contains("an-echoed-capability"),
             "status {status} leaked the subscription path: {message}"

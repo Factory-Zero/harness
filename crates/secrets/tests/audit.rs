@@ -108,6 +108,21 @@ async fn the_log_never_contains_a_secret_value() {
         ))
         .await
         .expect("read");
+    // The loop below asserts an absence, and an absence is satisfied by
+    // nothing being there at all: a store that stopped writing the audit
+    // log entirely would leave `rows` empty and pass every assertion in
+    // this test. So first prove the rows that would carry the secret
+    // exist, and are the two actions just performed.
+    let actions: Vec<String> = rows
+        .rows
+        .iter()
+        .filter_map(|row| row.get::<String>("action"))
+        .collect();
+    assert_eq!(
+        actions,
+        ["put", "get"],
+        "the audit log has no row for a put and a get, so nothing below is checking anything"
+    );
     for row in &rows.rows {
         for column in ["actor", "name", "action", "request_id"] {
             let value: String = row.get(column).unwrap_or_default();

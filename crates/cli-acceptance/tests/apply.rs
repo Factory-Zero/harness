@@ -273,6 +273,13 @@ mod on_postgres {
             false,
         )
         .expect_err("port 1 refuses connections");
+        // An error that rendered empty would satisfy the absence and
+        // leave an operator with nothing to act on, so the refusal has to
+        // still say what went wrong — just not with the URL in it.
+        assert!(
+            err.to_lowercase().contains("connect") || err.to_lowercase().contains("postgres"),
+            "the refusal says nothing about what failed: {err:?}"
+        );
         assert!(
             !err.contains("supersecret"),
             "the connection string is never echoed: {err}"
