@@ -54,6 +54,37 @@ impl TenantStatus {
         }
     }
 
+    /// Whether boot-time reconciliation should fly this tenant.
+    ///
+    /// A `match` and not a negation, which is the whole point. The
+    /// reconciler asked `status != Degraded` while there were three
+    /// statuses, so it was accidentally right; adding `Offboarding` and
+    /// `Archived` silently enrolled both in the fleet, which would have
+    /// reconnected to a shredded tenant's database and flipped it back to
+    /// `active`. Written this way, the next variant added to this
+    /// `#[non_exhaustive]` enum cannot compile until someone says which
+    /// side of the line it is on.
+    #[must_use]
+    pub fn is_reconciled(self) -> bool {
+        match self {
+            Self::Active | Self::Provisioning => true,
+            Self::Degraded | Self::Offboarding | Self::Archived => false,
+        }
+    }
+
+    /// Whether the lifecycle ends here. Only [`TenantStatus::Archived`]
+    /// does: the database is dropped and the data keys are destroyed
+    /// (`docs/TENANT-ONBOARDING.md` §2), so there is nothing left to
+    /// serve and no honest way back. The registry enforces it — see
+    /// `Postgres::register_tenant`.
+    #[must_use]
+    pub fn is_terminal(self) -> bool {
+        match self {
+            Self::Archived => true,
+            Self::Active | Self::Provisioning | Self::Degraded | Self::Offboarding => false,
+        }
+    }
+
     /// Parses the registry's text form; anything else (a future version
     /// wrote a status this binary does not know) reads as
     /// [`TenantStatus::Degraded`] — refuse, do not guess.
@@ -419,6 +450,60 @@ mod tests {
             );
         }
         assert!(found(TenantStatus::Active).admit().is_ok());
+    }
+
+    #[test]
+    fn a_retired_tenant_is_never_flown_by_the_fleet() {
+        // The bug this pins: the reconciler filtered `status != Degraded`,
+        // which was right for three statuses and silently enrolled both
+        // new ones. Flying an offboarding tenant reconnects to a database
+        // mid-shred and flips it back to `active`; flying an archived one
+        // reconnects to a database that no longer exists.
+        assert!(TenantStatus::Active.is_reconciled());
+        assert!(TenantStatus::Provisioning.is_reconciled());
+        for retired in [
+            TenantStatus::Degraded,
+            TenantStatus::Offboarding,
+            TenantStatus::Archived,
+        ] {
+            assert!(
+                !retired.is_reconciled(),
+                "{retired} must not be flown by boot reconciliation"
+            );
+        }
+    }
+
+    #[test]
+    fn archived_is_the_only_terminal_status() {
+        assert!(TenantStatus::Archived.is_terminal());
+        for live in [
+            TenantStatus::Active,
+            TenantStatus::Provisioning,
+            TenantStatus::Degraded,
+            TenantStatus::Offboarding,
+        ] {
+            assert!(!live.is_terminal(), "{live} is a state, not an ending");
+        }
+    }
+
+    #[test]
+    fn a_terminal_status_never_serves_and_is_never_reconciled() {
+        // The two properties together are what "retired" means: it cannot
+        // answer a request and no boot brings it back. Asserting each
+        // separately would let a future variant satisfy one and not the
+        // other.
+        for status in [
+            TenantStatus::Active,
+            TenantStatus::Provisioning,
+            TenantStatus::Degraded,
+            TenantStatus::Offboarding,
+            TenantStatus::Archived,
+        ] {
+            if status.is_terminal() {
+                assert!(found(status).admit().is_err(), "{status} served");
+                assert!(!status.is_reconciled(), "{status} was flown");
+            }
+        }
     }
 
     #[test]
