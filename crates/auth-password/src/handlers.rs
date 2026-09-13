@@ -218,10 +218,19 @@ async fn register(
         Ok(Some(existing)) => {
             // Somebody has this address. Tell *them*, by mail, and tell
             // the caller exactly what a new registration is told.
+            // `user_id` and nothing else, like every other event in the
+            // auth stack. The address used to be here for a subscriber's
+            // convenience, and it made this the one event that carried
+            // one: a payload goes to the event forwarder, which on the
+            // sidecar path is a separate Worker, so "this address has an
+            // account" — the exact fact the 202 above is careful not to
+            // reveal — was leaving the service attached to the address it
+            // is about. A subscriber has the id and `user_by_id` has the
+            // address, which is also the only way to get the current one.
             ctx.events.emit_in(
                 &scope,
                 EVENT_DUPLICATE_REGISTRATION,
-                json!({ "user_id": existing.id, "email": email }),
+                json!({ "user_id": existing.id }),
             );
             return Ok(accepted());
         }
@@ -234,11 +243,8 @@ async fn register(
 
     match create_account(db, clock, id_gen, &email, &password_hash).await {
         Ok(user_id) => {
-            ctx.events.emit_in(
-                &scope,
-                EVENT_REGISTERED,
-                json!({ "user_id": user_id, "email": email }),
-            );
+            ctx.events
+                .emit_in(&scope, EVENT_REGISTERED, json!({ "user_id": user_id }));
             Ok(accepted())
         }
         Err(err) => {

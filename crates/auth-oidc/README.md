@@ -155,9 +155,13 @@ does not exist yet; the callback says so plainly rather than guessing.
 
 ## Known gaps
 
-- The login chooser at `/v1/auth-core/authorize` does not offer this yet:
-  `enabled_login_methods()` still returns nothing, and wiring it needs a
-  decision about the methods that need a page rather than a link.
+- The chooser at `/v1/auth-core/authorize` offers Google and Apple —
+  `AUTH_CORE_LOGIN_METHODS=google,apple` — so this module is reachable
+  from it. What is still unwired are the two methods that need a **form**
+  rather than a link or a script ceremony: `auth-magic-link` and
+  `auth-password` are in no catalogue entry, because the chooser can
+  render a redirect link and a passkey button and nothing else. That is a
+  decision about what the sign-in page looks like, not a missing wire.
 - No manual run against real Google or real Apple yet. Everything here is
   exercised against a fake provider that mints real RS256 ID tokens and
   serves each provider's own discovery shape, which covers the verification

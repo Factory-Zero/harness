@@ -711,3 +711,138 @@ fn weak_hash(password: &str) -> String {
         hash = PhcB64::encode_string(&out),
     )
 }
+
+/// A module that subscribes to this one's events and keeps every payload,
+/// so a test can assert on what actually leaves the service.
+#[derive(Clone, Default)]
+struct EventSpy {
+    seen: Arc<RwLock<Vec<(String, Value)>>>,
+}
+
+impl cratefield_core::Module for EventSpy {
+    fn name(&self) -> &'static str {
+        "event-spy"
+    }
+    fn version(&self) -> &'static str {
+        "0.0.0"
+    }
+    fn requires(&self) -> &'static [cratefield_core::Port] {
+        &[]
+    }
+    fn migrations(&self) -> cratefield_core::Migrations {
+        cratefield_core::Migrations::EMPTY
+    }
+    fn validate_config(&self, _cfg: &dyn Config) -> Result<(), cratefield_core::ConfigError> {
+        Ok(())
+    }
+    fn router(&self, _ctx: cratefield_core::ModuleContext) -> axum::Router {
+        axum::Router::new()
+    }
+    fn events(&self) -> Vec<(cratefield_core::EventName, cratefield_core::EventHandler)> {
+        [
+            "auth-password.registered",
+            "auth-password.duplicate_registration",
+            "auth-password.logged_in",
+            "auth-password.changed",
+            "auth-password.locked",
+        ]
+        .into_iter()
+        .map(|name| {
+            let seen = Arc::clone(&self.seen);
+            let event = name.to_owned();
+            let handler: cratefield_core::EventHandler = Arc::new(
+                move |_scope: &cratefield_core::Scope,
+                      payload: Value|
+                      -> cratefield_core::BoxFuture<
+                    'static,
+                    Result<(), cratefield_core::AnyError>,
+                > {
+                    seen.write().expect("lock").push((event.clone(), payload));
+                    Box::pin(async { Ok(()) })
+                },
+            );
+            (name.to_owned(), handler)
+        })
+        .collect()
+    }
+}
+
+#[test]
+fn no_event_this_module_emits_carries_an_address() {
+    pollster::block_on(async {
+        // Every other event in the auth stack carries ids — `user_id`,
+        // `session_id`, `provider`, `credential_id`. These two carried the
+        // address as well, which made them the only ones that did, and a
+        // payload does not stay inside the service: it goes to the event
+        // forwarder, which on the sidecar path is a separate Worker. So
+        // "this address has an account" — the exact fact the 202 from
+        // `/register` is built not to reveal — was leaving attached to the
+        // address it is about.
+        let spy = EventSpy::default();
+        let clock = Arc::new(TestClock(AtomicI64::new(1_788_775_200)));
+        let config: Arc<dyn Config> =
+            Arc::new(MapConfig::from_pairs(Vec::<(String, String)>::new()));
+        let clock_for_ports = clock.clone();
+        let config_for_ports = config.clone();
+        let harness = TestHarness::with_ports(
+            vec![
+                Box::new(AuthCore::new()),
+                Box::new(Password::new()),
+                Box::new(spy.clone()),
+            ],
+            move |ports| {
+                ports.clock = Some(clock_for_ports);
+                ports.config = config_for_ports;
+            },
+        );
+
+        let address = "ada@example.com";
+        let register = |body: Value| {
+            let request = Request::builder()
+                .method(Method::POST)
+                .uri(REGISTER)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(axum::body::Body::from(body.to_string()))
+                .expect("request");
+            harness.router.clone().oneshot(request)
+        };
+
+        // A new account, then the same address again: `registered` and
+        // then `duplicate_registration`.
+        let first = register(json!({ "email": address, "password": GOOD }))
+            .await
+            .expect("response");
+        assert_eq!(first.status(), StatusCode::ACCEPTED);
+        let second = register(json!({ "email": address, "password": GOOD }))
+            .await
+            .expect("response");
+        assert_eq!(second.status(), StatusCode::ACCEPTED);
+
+        let seen = spy.seen.read().expect("lock").clone();
+        let names: Vec<&str> = seen.iter().map(|(name, _)| name.as_str()).collect();
+        assert!(
+            names.contains(&"auth-password.registered")
+                && names.contains(&"auth-password.duplicate_registration"),
+            "the spy saw {names:?} — this test proves nothing if the events never fired"
+        );
+
+        for (name, payload) in &seen {
+            let text = payload.to_string();
+            assert!(
+                !text.contains(address),
+                "`{name}` carried the address: {text}"
+            );
+            assert!(
+                !text.contains('@'),
+                "`{name}` carried something address-shaped: {text}"
+            );
+            // And it still says who, so a subscriber can look the address
+            // up: an empty payload would pass the assertions above and be
+            // useless.
+            assert!(
+                payload.get("user_id").and_then(Value::as_str).is_some(),
+                "`{name}` names nobody: {text}"
+            );
+        }
+    });
+}

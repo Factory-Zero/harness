@@ -14,6 +14,8 @@ See [ADR 0204](../../docs/adr/0204-facebook-login-without-openid-connect.md).
 |---|---|
 | `GET /start?return_to=/path` | Builds the authorization URL with PKCE, seals the flow into a signed cookie, redirects |
 | `GET /callback?code&state` | Verifies the flow, exchanges the code, fetches the profile, applies the linking rules, issues a session |
+| `POST /data-deletion` | Meta's data deletion callback: verifies the `signed_request`, records a job, answers with a status URL and a confirmation code |
+| `GET /deletion-status?code` | What happened to one recorded request, for the URL the callback handed back |
 
 ## Configuration
 
@@ -82,10 +84,31 @@ every Meta identity row stops matching and the people behind them cannot sign
 in that way any more. Stored as returned, and said here rather than
 discovered later.
 
+## The data deletion callback
+
+Meta will not approve an app for public use without one (#18), and this is
+it. Meta posts a `signed_request` naming an app-scoped user id and expects
+a synchronous answer carrying a status URL and a confirmation code.
+
+**The work does not happen in that request.** It is recorded as a job and
+drained by the module's `scheduled` hook, because doing it inline would
+mean either a slow callback or a deletion that silently failed after the
+answer had already gone out. The confirmation code is what ties the two
+together, and `GET /deletion-status?code` is where it leads.
+
+What "deletion" means is ADR 0204's decision: **unlink the Meta identity,
+and delete the account entirely only when no other identity and no other
+credential remains.** Anything more would let a request from one provider
+destroy an account somebody still reaches another way — Meta's request is
+about Meta's data.
+
+Every refusal answers `400` with the same body. The endpoint is
+unauthenticated by definition, so a caller who could tell "wrong
+signature" from "no such user" would learn whether a given person has an
+account.
+
 ## Known gaps
 
-- **The data deletion callback is not built** (#18). Meta will not approve the
-  app for public use without one. ADR 0204 decides what it deletes.
 - **No manual run against a real Meta app.** Everything here is exercised
   against a fake that serves the token endpoint and the Graph profile shape,
   which covers this module's logic but not Meta's own behaviour: whether the

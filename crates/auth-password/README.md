@@ -61,6 +61,25 @@ first two expensive to reach. Not required — a module that refused to
 start without a captcha would take the whole service down — but `fz
 doctor` refuses a production venture with public writes and no captcha.
 
+## Events carry ids, never an address
+
+Every event this module emits carries `user_id` and, where it applies,
+`session_id` — the same shape as every other event in the auth stack. Two
+of them used to carry the address as well, for a subscriber's convenience,
+and that made them the only events in the stack that did.
+
+A payload does not stay inside the service. It goes to the event
+forwarder, which on the sidecar path is a separate Worker. So
+`duplicate_registration` was carrying "this address has an account" — the
+exact fact the `202` from `/register` is built not to reveal — out of the
+service, attached to the address it is about.
+
+A subscriber that needs the address looks it up with `user_by_id`, which
+it would have to do anyway: an address can change, and the copy in an old
+event would be the stale one. `no_event_this_module_emits_carries_an_address`
+pins it, and also asserts the payload still names somebody, because an
+empty payload would satisfy the first half and be useless.
+
 ## Nothing here says whether an address has an account
 
 - **Registration** answers `202` and the same body whether it created an
@@ -106,7 +125,10 @@ rehashing on the strength of an unreadable value would be guessing.
 - **No account recovery.** Somebody who forgets their password has no way
   back in through this module; that is the magic link's job.
 - The `auth-password.duplicate_registration` event says a mail should be
-  sent. **Nothing sends it yet** — no mail module subscribes.
+  sent. **Nothing sends it yet** — no mail module subscribes, so today the
+  owner of an already-registered address is told nothing at all.
+- A subscriber, when there is one, **has to look the address up** from the
+  `user_id` in the payload. That is deliberate: see below.
 
 ---
 
