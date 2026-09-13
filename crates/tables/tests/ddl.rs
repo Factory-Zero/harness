@@ -541,3 +541,82 @@ default = 42.0
     .expect("renders");
     assert!(sql.contains("views INTEGER DEFAULT 42"), "{sql}");
 }
+
+#[test]
+fn a_control_character_in_an_enum_member_renders_no_sql() {
+    // The renderer only doubles quotes, so a control character went
+    // through raw: a NUL truncates the statement in SQLite and PostgreSQL
+    // refuses it outright, and either way the schema file is not what the
+    // declaration said. Escaping would preserve a member no caller wants,
+    // so the declaration is refused instead.
+    // The member is written as a TOML escape, so this source file stays
+    // printable and the parser is what produces the control character.
+    for (member, what) in [
+        (r"two\nlines", "newline"),
+        (r"nul\u0000here", "NUL"),
+        (r"bell\u0007here", "BEL"),
+    ] {
+        let fragment = format!(
+            r#"
+[tables.post]
+[[tables.post.fields]]
+name = "id"
+kind = "uuid"
+required = true
+[[tables.post.fields]]
+name = "state"
+kind = "enum"
+values = ["ok", "{member}"]
+"#
+        );
+        let schema = schema(&fragment);
+        let error = schema
+            .ddl(SqlDialect::Sqlite)
+            .expect_err("a {what} must not reach SQL");
+        assert!(
+            error
+                .problems
+                .iter()
+                .any(|line| line.contains("control character")),
+            "{what}: {:#?}",
+            error.problems
+        );
+        // And the message is printable: the offending character cannot be
+        // the thing that makes the error unreadable.
+        assert!(
+            error
+                .problems
+                .iter()
+                .all(|line| !line.chars().any(char::is_control)),
+            "{what}: the refusal echoed the control character back"
+        );
+    }
+}
+
+#[test]
+fn an_integer_default_outside_i64_renders_no_sql() {
+    // `literal()` falls back to a quoted string for an integer it cannot
+    // render, which would put `'9223372036854775809'` in an INTEGER
+    // column. The declaration check is what stops it getting that far.
+    let schema = schema(
+        r#"
+[tables.post]
+[[tables.post.fields]]
+name = "id"
+kind = "uuid"
+required = true
+[[tables.post.fields]]
+name = "count"
+kind = "integer"
+default = 9223372036854775808
+"#,
+    );
+    let error = schema
+        .ddl(SqlDialect::Sqlite)
+        .expect_err("an out-of-range default must not reach SQL");
+    assert!(
+        error.problems.iter().any(|line| line.contains("64 bits")),
+        "{:#?}",
+        error.problems
+    );
+}

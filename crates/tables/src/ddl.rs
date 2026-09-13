@@ -48,6 +48,41 @@
 //! `FALSE` and `TRUE`, because SQLite has no boolean type. Row values
 //! stay `true` and `false` on the wire in both cases. Converting them for
 //! the engine belongs to the writer, which is not built yet.
+//!
+//! # Where the two engines are not the same
+//!
+//! The DDL is byte-identical in shape, but three guarantees are weaker on
+//! SQLite. They are stated here because someone reading only the table
+//! above would assume a declared table behaves the same on both, and each
+//! one is a real difference in what the engine enforces:
+//!
+//! - **An integer primary key is a rowid alias in SQLite.** A
+//!   `PRIMARY KEY` on an `INTEGER` column makes that column the table's
+//!   rowid: it auto-assigns when the write omits it, and it accepts no
+//!   other type. On Postgres a `BIGINT PRIMARY KEY` is an ordinary
+//!   column that must be supplied. A declaration that relies on the
+//!   database filling the key in works on one engine and not the other,
+//!   so do not rely on it — the row validator requires a primary key to
+//!   be present or defaulted precisely so the two agree.
+//! - **A boolean column is unconstrained on SQLite.** It is stored as
+//!   `INTEGER` and nothing stops `7` from being written directly through
+//!   SQL. Postgres rejects it. The row validator is what makes the two
+//!   agree, which means a write that bypasses it is only checked on one
+//!   of the two engines.
+//! - **Foreign keys are inert on SQLite unless the connection asks for
+//!   them.** `REFERENCES` renders in both dialects, but SQLite enforces
+//!   it only with `PRAGMA foreign_keys=ON`, which is per connection and
+//!   off by default — and nothing in this repository sets it. So a
+//!   foreign key is a comment on SQLite today and a constraint on
+//!   Postgres. The topological creation order is still right for both;
+//!   it is the enforcement that differs.
+//!
+//! None of the three is worked around here. A generated `CHECK` for
+//! booleans, or a pragma issued behind the caller's back, would make the
+//! DDL stop being the portable subset the hand-written migrations use.
+//! They belong to the writer and the connection setup, which are #153's
+//! CRUD layer, and are written down so that layer inherits a list rather
+//! than a surprise.
 
 use cratefield_core::ConfigError;
 use serde_json::Value;

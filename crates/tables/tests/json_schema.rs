@@ -177,3 +177,40 @@ default = "untitled"
         assert!(!rendered.contains(absent), "{absent} leaked: {rendered}");
     }
 }
+
+#[test]
+fn properties_come_out_in_declaration_order_not_alphabetically() {
+    // The view is a published contract, so its bytes are what a drift
+    // gate compares. Declaration order holds only while
+    // `serde_json/preserve_order` is on — without it a `Map` is a
+    // `BTreeMap` and sorts the keys. The crate used to inherit the
+    // feature from `cratefield-core`'s choice of a `schemars` feature and
+    // now asks for it itself; this is what notices if that stops being
+    // true.
+    let schema = schema(
+        r#"
+[tables.post]
+[[tables.post.fields]]
+name = "zebra"
+kind = "text"
+required = true
+[[tables.post.fields]]
+name = "middle"
+kind = "integer"
+[[tables.post.fields]]
+name = "alpha"
+kind = "boolean"
+"#,
+    );
+    let rendered = json_schema(schema.table("post").unwrap());
+    let names: Vec<&String> = rendered["properties"]
+        .as_object()
+        .expect("properties is an object")
+        .keys()
+        .collect();
+    assert_eq!(
+        names,
+        ["zebra", "middle", "alpha"],
+        "properties were reordered; `serde_json/preserve_order` is off"
+    );
+}

@@ -35,12 +35,32 @@ use cratefield_core::Problem;
 use serde_json::Value;
 use std::fmt::Write as _;
 
-use crate::schema::TableDef;
+use crate::schema::{FieldKind, TableDef, TextFormat};
 use crate::value::{ErrorCode, check_value};
 
 /// The largest number of errors a problem `detail` spells out before it
 /// summarises the rest. The structured list is never truncated.
 pub const MAX_DETAIL_ERRORS: usize = 10;
+
+/// The longest an *unknown* key is echoed back at the caller, in
+/// characters. Declared field names are bounded by the schema's own
+/// identifier rules; an unknown key is whatever the caller sent, so a
+/// megabyte key name came straight back in the 400 body, ten of them per
+/// request. Truncated keys keep the error useful — a misspelling is
+/// visible in the first few characters — without turning the validator
+/// into an echo service.
+pub const MAX_UNKNOWN_KEY_CHARS: usize = 64;
+
+/// `key`, cut to [`MAX_UNKNOWN_KEY_CHARS`] characters with a marker. Cut
+/// on a character boundary, never a byte one, so a multi-byte key cannot
+/// produce invalid UTF-8 or a lone surrogate in the response.
+fn bounded_key(key: &str) -> String {
+    let mut cut: String = key.chars().take(MAX_UNKNOWN_KEY_CHARS).collect();
+    if key.chars().nth(MAX_UNKNOWN_KEY_CHARS).is_some() {
+        cut.push('…');
+    }
+    cut
+}
 
 /// One rejected field.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +148,49 @@ impl std::fmt::Display for RowErrors {
 
 impl std::error::Error for RowErrors {}
 
+/// Rewrites every declared `format = "email"` field of `row` into its
+/// canonical form, and returns the row.
+///
+/// **Run this before [`validate_row`], never inside it.** The validator
+/// coerces nothing and trims nothing — that rule is what lets the
+/// conformance corpus mean one thing in two languages — so normalisation
+/// has to be a separate, visible step rather than a quiet rewrite hidden
+/// in a checker.
+///
+/// It is not optional, though. `unique` on an email column is enforced by
+/// the database on the bytes it is given, so without this
+/// `Alice@Example.COM` and `alice@example.com` are two rows, while every
+/// module in the harness treats them as one address
+/// (`cratefield_core::email::normalize`, issue #10). A declared table
+/// that skipped this would mean something different by `unique` than the
+/// rest of the harness does.
+///
+/// Trim, Unicode NFC, lowercase — the same three steps core applies, and
+/// idempotent for the same reason. A non-string value is left alone: it
+/// is the validator's business to reject it, not this function's.
+#[must_use]
+pub fn normalize_row(table: &TableDef, row: Value) -> Value {
+    let Value::Object(mut object) = row else {
+        return row;
+    };
+    for field in &table.fields {
+        if !matches!(
+            field.kind,
+            FieldKind::Text {
+                format: Some(TextFormat::Email),
+                ..
+            }
+        ) {
+            continue;
+        }
+        if let Some(Value::String(address)) = object.get(&field.name) {
+            let normalized = cratefield_core::normalize_email(address);
+            object.insert(field.name.clone(), Value::String(normalized));
+        }
+    }
+    Value::Object(object)
+}
+
 /// Checks `row` against `table`.
 ///
 /// # Errors
@@ -173,7 +236,7 @@ pub fn validate_row(table: &TableDef, row: &Value) -> Result<(), RowErrors> {
     unknown.sort();
     for key in unknown {
         errors.push(RowError::new(
-            key,
+            bounded_key(key),
             ErrorCode::UnknownField,
             format!("is not a declared field of `{}`", table.name),
         ));
